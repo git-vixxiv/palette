@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net: Default Deny All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Globally Hardened Helper Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Enforce schema validation for a color palette
+    function isValidPalette(data) {
+      return data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 64
+        && data.harmonyMode is string && data.harmonyMode.size() <= 32
+        && data.colors is list && data.colors.size() >= 3 && data.colors.size() <= 10;
+    }
+
+    // Enforce schema validation for a user subscription profile
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid
+        && data.tier is string && (data.tier == 'free' || data.tier == 'pro-monthly' || data.tier == 'pro-annual' || data.tier == 'pro-lifetime')
+        && (data.email is string ? (data.email.size() <= 256) : true);
+    }
+
+    // 3. Match Block for User Saved Palettes
+    match /palettes/{paletteId} {
+      
+      allow get: if isSignedIn() && isOwner(existing().userId);
+      
+      // Query Enforcer: Lists must be scoped to the authenticated user's ID
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() 
+        && isValidId(paletteId)
+        && isOwner(incoming().userId)
+        && isValidPalette(incoming())
+        && incoming().createdAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(paletteId)
+        && isOwner(existing().userId)
+        && isOwner(incoming().userId)
+        && isValidPalette(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+
+      allow delete: if isSignedIn() 
+        && isOwner(existing().userId);
+    }
+
+    // 4. Match Block for User Profiles & Billing Tiers
+    match /users/{userId} {
+      allow get: if isSignedIn() && isOwner(userId);
+      
+      allow create: if isSignedIn()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().updatedAt == request.time;
+
+      allow delete: if false; // Profiles are read/write but non-deletable from the client
+    }
+  }
+}

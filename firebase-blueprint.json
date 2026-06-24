@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "palette": {
+      "title": "palette",
+      "description": "A user-saved custom color palette featuring individual roles and lock configurations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "harmonyMode": { "type": "string" },
+        "colors": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "name", "colors"]
+    },
+    "userProfile": {
+      "title": "userProfile",
+      "description": "User account configurations, subscription tier status, and billing details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "tier": { "type": "string", "enum": ["free", "pro-monthly", "pro-annual", "pro-lifetime"] },
+        "subscriptionId": { "type": "string" },
+        "subscriptionStatus": { "type": "string" },
+        "premiumExpires": { "type": "string" },
+        "pricingPlan": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "tier"]
+    }
+  },
+  "firestore": {
+    "palettes/{paletteId}": {
+      "schema": "palette",
+      "description": "A collection of 5-color palettes saved by authenticated users"
+    },
+    "users/{userId}": {
+      "schema": "userProfile",
+      "description": "Information about user billing profiles, subscription validity, and accounts status"
+    }
+  }
+}
