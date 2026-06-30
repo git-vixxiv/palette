@@ -1,20 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# palette by vixxiv
 
-# Run and deploy your AI Studio app
+Generate, analyze, grade, and save color palettes matching established color
+science. Real-time WCAG 2.1 contrast matrix checker and live layout pair analyst.
 
-This contains everything you need to run your app locally.
+- **Frontend:** React 19 + Vite + Tailwind
+- **Accounts:** Firebase Auth (Google + Email/Password)
+- **Data:** Cloud Firestore (saved palettes + subscription profiles)
+- **Billing:** Square — auto-renewing monthly/annual subscriptions + one-time
+  lifetime, charged via Cloud Functions (`functions/`)
+- **Hosting:** Firebase Hosting at `palette.vixxiv.com`
 
-View your app in AI Studio: https://ai.studio/apps/dbb2b14a-ffba-4104-821f-3201e33c9a7e
+## Run locally
 
-## Run Locally
+```bash
+npm install
+cp .env.example .env.local   # fill in Square publishable keys
+npm run dev
+```
 
-**Prerequisites:**  Node.js
+For real auth/billing you also need a populated `firebase-applet-config.json`
+and the Cloud Functions deployed — see **[DEPLOY.md](DEPLOY.md)** for the full
+go-live runbook.
 
+## Project layout
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+| Path | What |
+|------|------|
+| `src/` | React app (generator, scoring, contrast matrix, auth, checkout) |
+| `src/utils/square.ts` | Square Web Payments SDK loader (frontend tokenization) |
+| `functions/` | Cloud Functions: `createSubscription`, `cancelSubscription`, `squareWebhook` |
+| `firestore.rules` | Security rules — tier grants are backend-only |
+| `DEPLOY.md` | Step-by-step go-live runbook |

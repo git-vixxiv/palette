@@ -1,5 +1,5 @@
 {
-  "name": "color pro by vixxiv",
+  "name": "palette by vixxiv",
   "description": "Generate, analyze, grade, and save color palettes matching established color science. Real-time WCAG 2.1 contrast matrix checker and live layout pair analyst.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

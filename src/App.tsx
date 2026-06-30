@@ -113,7 +113,7 @@ function MainWorkbenchContent() {
 
       {/* Subtle responsive footer layout */}
       <footer className="bg-white border-t border-gray-150 py-6 px-4 text-center text-xs text-gray-400 font-sans">
-        <p>© {new Date().getFullYear()} color pro by vixxiv. Backed by established WCAG 2.1 accessibility guidance & color harmony science.</p>
+        <p>© {new Date().getFullYear()} palette by vixxiv. Backed by established WCAG 2.1 accessibility guidance & color harmony science.</p>
         <p className="text-[10px] mt-1 text-gray-300">Space Grotesk typography & lucide vector assets</p>
       </footer>
 

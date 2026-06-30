@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 import firebaseConfig from "../firebase-applet-config.json";
 
 // Check if Firebase keys are unconfigured (empty strings)
@@ -16,6 +17,7 @@ let app;
 let auth: any = null;
 let db: any = null;
 let googleProvider: any = null;
+let functions: any = null;
 
 if (isFirebaseConfigured) {
   try {
@@ -27,12 +29,14 @@ if (isFirebaseConfigured) {
     googleProvider.setCustomParameters({
       prompt: "select_account",
     });
+    // Cloud Functions (Square billing) live in us-central1.
+    functions = getFunctions(app, "us-central1");
   } catch (error) {
     console.error("Firebase startup crash:", error);
   }
 }
 
-export { auth, db, googleProvider };
+export { auth, db, googleProvider, functions };
 
 // Required Firestore Error Logger and Parser according to Firebase integration guidelines
 export enum OperationType {

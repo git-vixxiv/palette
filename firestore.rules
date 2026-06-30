@@ -47,6 +47,27 @@ service cloud.firestore {
         && (data.email is string ? (data.email.size() <= 256) : true);
     }
 
+    // Billing-controlled fields may ONLY be written by the trusted backend
+    // (Cloud Functions via the Admin SDK bypass these rules). The client is
+    // never allowed to set or change these, which prevents a user from
+    // self-granting a paid tier from the browser console.
+    function billingFieldsUnchanged(incomingData, existingData) {
+      return incomingData.tier == existingData.tier
+        && incomingData.get('subscriptionId', '') == existingData.get('subscriptionId', '')
+        && incomingData.get('subscriptionStatus', '') == existingData.get('subscriptionStatus', '')
+        && incomingData.get('premiumExpires', '') == existingData.get('premiumExpires', '')
+        && incomingData.get('pricingPlan', '') == existingData.get('pricingPlan', '');
+    }
+
+    // On first profile creation the client may only ever start on the free tier
+    // with no active subscription metadata.
+    function isCleanFreeProfile(data) {
+      return data.tier == 'free'
+        && data.get('subscriptionStatus', '') != 'active'
+        && data.get('subscriptionId', '') == ''
+        && data.get('pricingPlan', '') == '';
+    }
+
     // 3. Match Block for User Saved Palettes
     match /palettes/{paletteId} {
       
@@ -74,19 +95,30 @@ service cloud.firestore {
     }
 
     // 4. Match Block for User Profiles & Billing Tiers
+    //
+    // IMPORTANT: tier / subscription fields are granted by the backend only.
+    // The client may create its own profile on the free tier and edit
+    // non-billing fields, but can never elevate its own tier. All paid-tier
+    // writes happen in Cloud Functions through the Admin SDK, which is not
+    // subject to these rules.
     match /users/{userId} {
       allow get: if isSignedIn() && isOwner(userId);
-      
+
+      // Client may only ever create a clean, free-tier profile for itself.
       allow create: if isSignedIn()
         && isValidId(userId)
         && isOwner(userId)
         && isValidUserProfile(incoming())
+        && isCleanFreeProfile(incoming())
         && incoming().updatedAt == request.time;
 
+      // Client may update non-billing fields, but the billing fields must be
+      // identical to what is already stored (only the backend can change them).
       allow update: if isSignedIn()
         && isValidId(userId)
         && isOwner(userId)
         && isValidUserProfile(incoming())
+        && billingFieldsUnchanged(incoming(), existing())
         && incoming().updatedAt == request.time;
 
       allow delete: if false; // Profiles are read/write but non-deletable from the client

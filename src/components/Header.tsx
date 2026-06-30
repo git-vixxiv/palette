@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Palette, LogIn, LogOut, ChevronDown, CheckCircle, Database, Sparkles, Star, Award } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { AuthModal } from "./AuthModal";
 
 export const Header: React.FC = () => {
-  const { user, loginWithGoogle, logout, isDbActive, savedPalettes, userSubscription, setShowUpgradeModal } = useApp();
+  const { user, logout, isDbActive, savedPalettes, userSubscription, setShowUpgradeModal, cancelSubscription } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
 
   return (
     <header className="flex items-center justify-between px-6 md:px-12 py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
@@ -17,7 +19,7 @@ export const Header: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg md:text-xl font-display font-black tracking-tight text-slate-800 lowercase">
-              color <span style={{ color: "#d1c69e" }}>pro</span> <span className="font-bold text-xs font-sans tracking-normal lowercase" style={{ color: "#2589BD" }}>by vixxiv</span>
+              palette <span className="font-bold text-xs font-sans tracking-normal lowercase" style={{ color: "#2589BD" }}>by vixxiv</span>
             </span>
             <span className="text-[10px] uppercase font-mono font-bold tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm sm:inline-block hidden">
               Lab & Analyzer
@@ -78,11 +80,11 @@ export const Header: React.FC = () => {
                 initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -5 }}
-                onClick={loginWithGoogle}
+                onClick={() => setAuthOpen(true)}
                 className="px-4 py-2 text-xs font-bold uppercase tracking-widest bg-slate-900 hover:bg-slate-800 text-white rounded-md transition-all shadow-xs flex items-center border border-transparent cursor-pointer"
               >
-                <span className="hidden sm:inline" style={{ fontSize: "9.6px" }}>Connect Vault</span>
-                <span className="sm:hidden" style={{ fontSize: "9.6px" }}>Connect</span>
+                <span className="hidden sm:inline" style={{ fontSize: "9.6px" }}>Sign In</span>
+                <span className="sm:hidden" style={{ fontSize: "9.6px" }}>Sign In</span>
               </motion.button>
             ) : (
               <div className="relative">
@@ -157,8 +159,23 @@ export const Header: React.FC = () => {
                             </p>
                             <p className="text-[9px] text-slate-500 mt-1 font-mono">
                               Plan: {userSubscription.pricingPlan || "Beta Access"} <br />
-                              Renews: {userSubscription.premiumExpires ? new Date(userSubscription.premiumExpires).toLocaleDateString() : "Forever"}
+                              {userSubscription.tier === "pro-lifetime"
+                                ? "Lifetime access — never expires"
+                                : `${userSubscription.subscriptionStatus === "canceling" ? "Ends" : "Renews"}: ${userSubscription.premiumExpires ? new Date(userSubscription.premiumExpires).toLocaleDateString() : "—"}`}
                             </p>
+                            {userSubscription.tier !== "pro-lifetime" && userSubscription.subscriptionStatus !== "canceling" && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm("Cancel your subscription? You'll keep Pro access until the end of the current billing period.")) {
+                                    setMenuOpen(false);
+                                    cancelSubscription();
+                                  }
+                                }}
+                                className="mt-2 text-[9px] uppercase tracking-wider font-bold text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
+                              >
+                                Cancel subscription
+                              </button>
+                            )}
                           </div>
                         )}
 
@@ -195,6 +212,8 @@ export const Header: React.FC = () => {
           </AnimatePresence>
         </div>
       </div>
+
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </header>
   );
 };

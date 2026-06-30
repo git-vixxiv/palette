@@ -1,30 +1,37 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  signOut, 
-  User 
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  updateProfile,
+  User
 } from "firebase/auth";
-import { 
-  collection, 
-  addDoc, 
-  getDocs, 
-  deleteDoc, 
-  doc, 
-  query, 
-  where, 
-  serverTimestamp, 
+import {
+  collection,
+  addDoc,
+  getDocs,
+  deleteDoc,
+  doc,
+  query,
+  where,
+  serverTimestamp,
   orderBy,
   getDoc,
   setDoc
 } from "firebase/firestore";
-import { 
-  auth, 
-  db, 
-  googleProvider, 
-  isFirebaseConfigured, 
-  handleFirestoreError, 
-  OperationType 
+import { httpsCallable } from "firebase/functions";
+import {
+  auth,
+  db,
+  googleProvider,
+  functions,
+  isFirebaseConfigured,
+  handleFirestoreError,
+  OperationType
 } from "../firebase";
 import { Palette, ColorItem, HarmonyMode, UserSubscription } from "../types";
 import { generateHarmony, getRandomHex, ColorRole, hexToRgb, rgbToHsl, offsetColor } from "../utils/colorUtils";
@@ -44,8 +51,15 @@ interface AppContextType {
   loadingSub: boolean;
   showUpgradeModal: boolean;
   setShowUpgradeModal: (show: boolean) => void;
-  upgradeToPro: (plan: 'monthly' | 'annual' | 'lifetime') => Promise<void>;
-  downgradeToFree: () => Promise<void>;
+  // Real Square checkout: takes a tokenized card from the Web Payments SDK,
+  // charges via the backend Cloud Function, then refreshes the local tier.
+  purchasePro: (
+    plan: 'monthly' | 'annual' | 'lifetime',
+    token: string,
+    verificationToken?: string
+  ) => Promise<void>;
+  cancelSubscription: () => Promise<void>;
+  refreshSubscription: () => Promise<void>;
 
   // Color controls
   setColors: React.Dispatch<React.SetStateAction<ColorItem[]>>;
@@ -70,6 +84,9 @@ interface AppContextType {
   
   // Auth & Storage DB controls
   loginWithGoogle: () => Promise<void>;
+  registerWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  sendReset: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   saveCurrentPalette: (name: string) => Promise<void>;
   deleteSavedPalette: (paletteId: string) => Promise<void>;
@@ -137,21 +154,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Fetch subscription tier status
   const fetchSubscription = async (uid: string) => {
-    // Creator Auto-Unlock: Elevate developer/reviewer email from metadata immediately to lifetime premium status
-    if (user && user.email === "jrozsa@gmail.com") {
-      const adminSub: UserSubscription = {
-        tier: "pro-lifetime",
-        subscriptionId: "admin_lifetime",
-        subscriptionStatus: "active",
-        premiumExpires: new Date(Date.now() + 100 * 365 * 24 * 3600 * 1000).toISOString(),
-        pricingPlan: "Lifetime Free Creator Status",
-        updatedAt: new Date().toISOString()
-      };
-      setUserSubscription(adminSub);
-      setLoadingSub(false);
-      return;
-    }
-
+    // NOTE: comp / admin access will be granted server-side via the upcoming
+    // admin tooling (backend writes the tier through the Admin SDK). There is
+    // intentionally no client-side tier override here.
     setLoadingSub(true);
     if (isFirebaseConfigured && db) {
       try {
@@ -215,106 +220,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [user]);
 
-  // Handle premium billing upgrades (monthly vs annual vs lifetime)
-  const upgradeToPro = async (plan: 'monthly' | 'annual' | 'lifetime') => {
-    let targetTier: "pro-monthly" | "pro-annual" | "pro-lifetime";
-    let pricingText = "";
-    const futureExpires = new Date();
-
-    if (plan === "monthly") {
-      targetTier = "pro-monthly";
-      pricingText = "$5/mo";
-      futureExpires.setMonth(futureExpires.getMonth() + 1);
-    } else if (plan === "annual") {
-      targetTier = "pro-annual";
-      pricingText = "$25/yr";
-      futureExpires.setFullYear(futureExpires.getFullYear() + 1);
-    } else {
-      targetTier = "pro-lifetime";
-      pricingText = "$50 lifetime";
-      futureExpires.setFullYear(futureExpires.getFullYear() + 100); // Practical lifetime mapping
-    }
-
-    const subId = "sub_" + Math.random().toString(36).substring(2, 10);
-
-    const subData: UserSubscription = {
-      tier: targetTier,
-      subscriptionId: subId,
-      subscriptionStatus: "active",
-      premiumExpires: futureExpires.toISOString(),
-      pricingPlan: pricingText,
-      updatedAt: new Date().toISOString()
-    };
-
+  // Re-read the authoritative subscription tier from the backend/Firestore.
+  const refreshSubscription = async () => {
     const uid = user ? user.uid : "local_guest";
-
-    if (user && isFirebaseConfigured && db) {
-      const qPath = `users/${uid}`;
-      try {
-        const userRef = doc(db, "users", uid);
-        await setDoc(userRef, {
-          userId: uid,
-          email: user.email || "",
-          tier: targetTier,
-          subscriptionId: subId,
-          subscriptionStatus: "active",
-          premiumExpires: futureExpires.toISOString(),
-          pricingPlan: pricingText,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-        
-        setUserSubscription(subData);
-        showToast(`Unlocked PRO mode! Subscribed to ${pricingText}. Welcome!`, "success");
-      } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, qPath);
-      }
-    } else {
-      try {
-        localStorage.setItem(`palette_generator_sub_${uid}`, JSON.stringify(subData));
-        setUserSubscription(subData);
-        showToast(`Guest Upgraded to Pro successfully! (${pricingText})`, "success");
-      } catch (err) {
-        console.error("Failed local guest upgrade:", err);
-      }
-    }
-    setShowUpgradeModal(false);
+    await fetchSubscription(uid);
   };
 
-  // Downgrade profile back to standard (allows users to toggle & test easily)
-  const downgradeToFree = async () => {
-    const subData: UserSubscription = {
-      tier: "free",
-      updatedAt: new Date().toISOString()
-    };
-    const uid = user ? user.uid : "local_guest";
+  // Real Square checkout. The card is tokenized in the browser by Square's
+  // Web Payments SDK (see UpgradeModal); here we hand that single-use token to
+  // the backend, which performs the actual charge / subscription creation and
+  // grants the tier server-side. We then refresh from Firestore.
+  const purchasePro = async (
+    plan: 'monthly' | 'annual' | 'lifetime',
+    token: string,
+    verificationToken?: string
+  ) => {
+    if (!user) {
+      showToast("Please sign in before subscribing.", "error");
+      throw new Error("You must be signed in to subscribe.");
+    }
+    if (!isFirebaseConfigured || !functions) {
+      showToast("Billing is unavailable right now. Please try again later.", "error");
+      throw new Error("Billing backend is not configured.");
+    }
 
-    if (user && isFirebaseConfigured && db) {
-      const qPath = `users/${uid}`;
-      try {
-        const userRef = doc(db, "users", uid);
-        await setDoc(userRef, {
-          userId: uid,
-          tier: "free",
-          subscriptionId: "",
-          subscriptionStatus: "cancelled",
-          premiumExpires: "",
-          pricingPlan: "",
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-        
-        setUserSubscription(subData);
-        showToast("Downgraded back to Standard Free Tier.", "info");
-      } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, qPath);
-      }
+    const callable = httpsCallable(functions, "createSubscription");
+    const res: any = await callable({ plan, token, verificationToken });
+
+    if (res?.data?.success) {
+      await fetchSubscription(user.uid);
+      showToast(`Unlocked PRO! ${res.data.pricingPlan || "Welcome aboard"}.`, "success");
+      setShowUpgradeModal(false);
     } else {
-      try {
-        localStorage.setItem(`palette_generator_sub_${uid}`, JSON.stringify(subData));
-        setUserSubscription(subData);
-        showToast("Guest account returned to standard free limits", "info");
-      } catch (err) {
-        console.error("Local downgrade fail:", err);
-      }
+      throw new Error("Checkout did not complete.");
+    }
+  };
+
+  // Cancel a recurring subscription via the backend (schedules cancellation at
+  // period end through Square; the webhook finalizes the downgrade).
+  const cancelSubscription = async () => {
+    if (!user) {
+      showToast("Please sign in.", "error");
+      return;
+    }
+    if (userSubscription.tier === "pro-lifetime") {
+      showToast("Lifetime access can't be cancelled.", "info");
+      return;
+    }
+    if (!isFirebaseConfigured || !functions) {
+      showToast("Billing is unavailable right now.", "error");
+      return;
+    }
+    try {
+      const callable = httpsCallable(functions, "cancelSubscription");
+      await callable({});
+      await fetchSubscription(user.uid);
+      showToast("Your subscription will end at the close of the billing period.", "info");
+    } catch (err: any) {
+      showToast(err?.message || "Could not cancel subscription.", "error");
     }
   };
 
@@ -686,6 +649,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Friendly mapping for the most common Firebase Auth error codes.
+  const authErrorMessage = (code: string): string => {
+    switch (code) {
+      case "auth/email-already-in-use":
+        return "That email already has an account. Try signing in instead.";
+      case "auth/invalid-email":
+        return "That doesn't look like a valid email address.";
+      case "auth/weak-password":
+        return "Password is too weak — use at least 6 characters.";
+      case "auth/invalid-credential":
+      case "auth/wrong-password":
+      case "auth/user-not-found":
+        return "Incorrect email or password.";
+      case "auth/too-many-requests":
+        return "Too many attempts. Please wait a moment and try again.";
+      default:
+        return "Authentication failed. Please try again.";
+    }
+  };
+
+  const registerWithEmail = async (email: string, password: string, displayName?: string) => {
+    if (!isFirebaseConfigured || !auth) {
+      showToast("Account creation is unavailable right now.", "error");
+      throw new Error("Auth not configured");
+    }
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      if (displayName && displayName.trim()) {
+        await updateProfile(cred.user, { displayName: displayName.trim() });
+      }
+      try {
+        await sendEmailVerification(cred.user);
+      } catch {
+        /* non-fatal — verification email is best-effort */
+      }
+      showToast("Account created! Check your inbox to verify your email.", "success");
+    } catch (err: any) {
+      const msg = authErrorMessage(err?.code || "");
+      showToast(msg, "error");
+      throw new Error(msg);
+    }
+  };
+
+  const loginWithEmail = async (email: string, password: string) => {
+    if (!isFirebaseConfigured || !auth) {
+      showToast("Sign-in is unavailable right now.", "error");
+      throw new Error("Auth not configured");
+    }
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      showToast("Signed in successfully!", "success");
+    } catch (err: any) {
+      const msg = authErrorMessage(err?.code || "");
+      showToast(msg, "error");
+      throw new Error(msg);
+    }
+  };
+
+  const sendReset = async (email: string) => {
+    if (!isFirebaseConfigured || !auth) {
+      showToast("Password reset is unavailable right now.", "error");
+      throw new Error("Auth not configured");
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      showToast("Password reset email sent. Check your inbox.", "success");
+    } catch (err: any) {
+      const msg = authErrorMessage(err?.code || "");
+      showToast(msg, "error");
+      throw new Error(msg);
+    }
+  };
+
   const logout = async () => {
     if (!isFirebaseConfigured || !auth) {
       setUser(null);
@@ -822,8 +858,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loadingSub,
         showUpgradeModal,
         setShowUpgradeModal,
-        upgradeToPro,
-        downgradeToFree,
+        purchasePro,
+        cancelSubscription,
+        refreshSubscription,
         setColors,
         setHarmonyMode,
         updateColorIndex,
@@ -840,6 +877,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addColumn,
         removeColumn,
         loginWithGoogle,
+        registerWithEmail,
+        loginWithEmail,
+        sendReset,
         logout,
         saveCurrentPalette,
         deleteSavedPalette,

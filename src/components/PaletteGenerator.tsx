@@ -84,6 +84,20 @@ export const PaletteGenerator: React.FC = () => {
   const firstRowModes: HarmonyMode[] = ["analogous", "monochromatic", "complementary", "triadic"];
   const secondRowModes: HarmonyMode[] = ["tetradic", "split", "random"];
 
+  // Scale the hex readout to the number of columns so a full 7-char hex always
+  // fits inside the card (more columns = narrower cards = smaller text/width).
+  const cols = currentColors.length;
+  const hexFont =
+    cols >= 8 ? "sm:text-xs md:text-sm"
+    : cols >= 6 ? "sm:text-sm md:text-base"
+    : cols >= 5 ? "sm:text-base md:text-lg"
+    : "sm:text-lg md:text-xl";
+  const hexWidth =
+    cols >= 8 ? "sm:w-16"
+    : cols >= 6 ? "sm:w-20"
+    : cols >= 5 ? "sm:w-24"
+    : "sm:w-28";
+
   const harmonyDescriptions: Record<HarmonyMode, string> = {
     analogous: "Neighboring colors on the color wheel (e.g. 15-30 deg offsets) for soft, cohesive, low-contrast palettes.",
     monochromatic: "Same hue with variations in saturation and lightness for a clean, professional, unified scheme.",
@@ -272,7 +286,7 @@ export const PaletteGenerator: React.FC = () => {
                     value={color.hex}
                     maxLength={7}
                     onChange={(e) => handleManualHexChange(idx, e.target.value)}
-                    className={`font-mono text-[10px] sm:text-lg md:text-2xl font-bold w-13 sm:w-24 text-center border-b ${borderStyle} focus:border-indigo-400 focus:outline-hidden py-0.5 tracking-wider uppercase transition-colors ${labelColor}`}
+                    className={`font-mono text-[10px] ${hexFont} font-bold w-13 ${hexWidth} text-center border-b ${borderStyle} focus:border-indigo-400 focus:outline-hidden py-0.5 tracking-wider uppercase transition-colors ${labelColor}`}
                   />
                   <button
                     onClick={() => handleCopy(color.hex, idx)}
@@ -311,18 +325,24 @@ export const PaletteGenerator: React.FC = () => {
                 <div className="mt-1.5 sm:mt-2 flex justify-center items-center">
                   <button
                     onClick={() => toggleColorLock(idx)}
+                    style={{
+                      color: isDark ? "#F4F4F4" : "#1a1a1a",
+                      borderColor: isDark ? "rgba(244,244,244,0.45)" : "rgba(26,26,26,0.35)",
+                    }}
                     className={`px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded transition-all cursor-pointer flex items-center justify-center gap-1 text-[8px] sm:text-[10px] uppercase font-sans font-black tracking-wider border ${
                       color.locked
-                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/30 shadow-xs scale-105"
+                        ? isDark
+                          ? "bg-white/20 shadow-xs scale-105"
+                          : "bg-black/10 shadow-xs scale-105"
                         : isDark
-                          ? "bg-white/10 hover:bg-white/20 text-white/90 border-white/10"
-                          : "bg-black/5 hover:bg-black/10 text-slate-800/90 border-black/5"
+                          ? "bg-white/5 hover:bg-white/15"
+                          : "bg-black/5 hover:bg-black/10"
                     }`}
                     title={color.locked ? "Unlock Color shade" : "Lock Color shade"}
                   >
                     {color.locked ? (
                       <>
-                        <Lock className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-emerald-400 animate-pulse" />
+                        <Lock className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 animate-pulse" />
                         <span className="hidden sm:inline">Unlock</span>
                       </>
                     ) : (
@@ -500,7 +520,7 @@ export const PaletteGenerator: React.FC = () => {
         {/* Action Spin and Save Launch Buttons - Formatted as horizontal single-row stream on mobile */}
         <div className="flex flex-row items-center justify-between sm:justify-end gap-2 sm:gap-4 w-full lg:w-auto shrink-0 mt-2 lg:mt-0">
           
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-1 sm:flex-initial">
+          <div className="flex flex-row sm:flex-col items-stretch gap-1.5 sm:gap-2 flex-1 sm:flex-initial sm:w-36">
             {/* Add Color Column */}
             {currentColors.length < 10 && (
               <button
@@ -540,12 +560,12 @@ export const PaletteGenerator: React.FC = () => {
           <button
             onClick={spinPalette}
             disabled={isSpinning}
-            style={{ backgroundColor: "#1F988C", borderColor: "#166D64" }}
-            className="py-2.5 sm:w-20 sm:h-20 sm:rounded-full rounded-lg px-4 sm:px-0 hover:brightness-110 active:scale-90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-xs sm:text-sm tracking-widest uppercase shadow-md transition-all flex sm:flex-col items-center justify-center gap-1 cursor-pointer border-2 select-none shrink-0"
+            style={{ backgroundColor: "#059669", borderColor: "#047857" }}
+            className="py-2.5 sm:w-28 sm:h-28 sm:rounded-full rounded-lg px-4 sm:px-0 hover:brightness-110 active:scale-90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-xs sm:text-sm tracking-widest uppercase shadow-lg transition-all flex sm:flex-col items-center justify-center gap-1 cursor-pointer border-2 select-none shrink-0"
             title="SPIN - Tap here or press spacebar!"
           >
-            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-white ${isSpinning ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline font-sans font-extrabold text-[10px] sm:text-[11px] tracking-widest sm:mt-0.5">SPIN</span>
+            <RefreshCw className={`w-3.5 h-3.5 sm:w-7 sm:h-7 text-white ${isSpinning ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline font-sans font-extrabold text-[10px] sm:text-xs tracking-widest sm:mt-1">SPIN</span>
           </button>
         </div>
       </div>

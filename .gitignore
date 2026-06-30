@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Firebase CLI local cache
+.firebase/
+# functions build output / deps (also covered by functions/.gitignore)
+functions/lib/
+functions/node_modules/
