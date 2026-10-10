@@ -27,7 +27,7 @@ export const PaletteGenerator: React.FC = () => {
     removeColumn,
     saveCurrentPalette,
     showToast,
-    userSubscription,
+    entitlement,
     setShowUpgradeModal,
   } = useApp();
 
@@ -543,15 +543,15 @@ export const PaletteGenerator: React.FC = () => {
               <span className="hidden sm:inline">Save Palette</span>
             </button>
 
-            {/* Quick Turn Pro Trigger */}
-            {userSubscription.tier === "free" && (
+            {/* Membership prompt for anyone without tool access */}
+            {!entitlement.tools && (
               <button
                 onClick={() => setShowUpgradeModal(true)}
                 className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-4 bg-amber-50 border text-[#7F345F] hover:bg-amber-100 rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
                 style={{ borderColor: "#1F988C" }}
               >
-                <span className="text-[10px] sm:text-xs font-black px-1 rounded" style={{ color: "#1F988C", backgroundColor: "rgba(31, 152, 140, 0.15)" }}>PRO</span>
-                <span className="hidden sm:inline">Turn Pro</span>
+                <span className="text-[10px] sm:text-xs font-black px-1 rounded" style={{ color: "#1F988C", backgroundColor: "rgba(31, 152, 140, 0.15)" }}>GOLD</span>
+                <span className="hidden sm:inline">Membership</span>
               </button>
             )}
           </div>

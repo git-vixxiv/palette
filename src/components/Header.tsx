@@ -2,12 +2,11 @@ import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Palette, LogIn, LogOut, ChevronDown, CheckCircle, Database, Sparkles, Star, Award } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { AuthModal } from "./AuthModal";
 
 export const Header: React.FC = () => {
-  const { user, logout, isDbActive, savedPalettes, userSubscription, setShowUpgradeModal, cancelSubscription } = useApp();
+  const { user, signIn, logout, isDbActive, savedPalettes, entitlement, membership, setShowUpgradeModal } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
+  const tierLabel = entitlement.tier === "none" ? (entitlement.client ? "client" : "no tier") : entitlement.tier;
 
   return (
     <header className="flex items-center justify-between px-6 md:px-12 py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
@@ -52,15 +51,15 @@ export const Header: React.FC = () => {
             </p>
           </div>
 
-          {/* Join Pro CTA badge */}
-          {userSubscription.tier === "free" ? (
+          {/* Membership badge — tool access comes from the vixxiv-id token */}
+          {!entitlement.tools ? (
             <button
               onClick={() => setShowUpgradeModal(true)}
               className="px-3 py-1.5 text-[9px] font-sans font-extrabold uppercase tracking-wider rounded border cursor-pointer transition-all hover:bg-rose-50 flex items-center gap-1.5 shrink-0 bg-white"
               style={{ color: "#7F345F", borderColor: "#7F345F" }}
             >
               <Sparkles className="w-3 h-3 text-amber-500 animate-spin-hover" />
-              <span className="hidden sm:inline">Join Pro</span>
+              <span className="hidden sm:inline">Membership</span>
               <span className="sm:hidden">Join</span>
             </button>
           ) : (
@@ -69,7 +68,7 @@ export const Header: React.FC = () => {
               style={{ color: "#22c55e", borderColor: "#22c55e", backgroundColor: "rgba(34, 197, 94, 0.05)" }}
             >
               <Award className="w-3 h-3 text-emerald-500" />
-              <span>Pro Active</span>
+              <span>{entitlement.client && entitlement.tier === "none" ? "Client" : entitlement.tier}</span>
             </div>
           )}
 
@@ -80,7 +79,7 @@ export const Header: React.FC = () => {
                 initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -5 }}
-                onClick={() => setAuthOpen(true)}
+                onClick={signIn}
                 className="px-4 py-2 text-xs font-bold uppercase tracking-widest bg-slate-900 hover:bg-slate-800 text-white rounded-md transition-all shadow-xs flex items-center border border-transparent cursor-pointer"
               >
                 <span className="hidden sm:inline" style={{ fontSize: "9.6px" }}>Sign In</span>
@@ -121,13 +120,13 @@ export const Header: React.FC = () => {
                       <div className="p-3 border-b border-slate-100">
                         <div className="flex justify-between items-start mb-1">
                           <p className="text-[9px] text-slate-400 font-sans uppercase tracking-widest font-bold">Account Owner</p>
-                          {userSubscription.tier !== "free" ? (
+                          {entitlement.tools ? (
                             <span className="text-[8px] font-mono uppercase bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-black flex items-center gap-0.5">
-                              <Star className="w-2 h-2 text-emerald-600 fill-emerald-600" /> pro status
+                              <Star className="w-2 h-2 text-emerald-600 fill-emerald-600" /> {tierLabel}
                             </span>
                           ) : (
                             <span className="text-[8px] font-mono uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-                              free tier
+                              {tierLabel}
                             </span>
                           )}
                         </div>
@@ -136,8 +135,26 @@ export const Header: React.FC = () => {
                       </div>
 
                       <div className="p-1 space-y-1">
-                        {/* Subscription Quick Upgrade Trigger */}
-                        {userSubscription.tier === "free" ? (
+                        {/* Membership status — `status` read verbatim from users/{uid} (ADR-0001 §10 gap 2).
+                            Billing and cancellation are the hub's; palette has no billing code. */}
+                        <div
+                          data-status={membership.status}
+                          className={`p-2 rounded text-xs border font-sans ${
+                            membership.tone === "warn"
+                              ? "bg-amber-50 border-amber-200 text-amber-900"
+                              : membership.tone === "ok"
+                                ? "bg-emerald-50/50 border-emerald-100 text-emerald-900"
+                                : "bg-slate-50 border-slate-100 text-slate-700"
+                          }`}
+                        >
+                          <p className="font-bold flex items-center gap-1">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            {membership.label}
+                          </p>
+                          {membership.detail && <p className="text-[9px] mt-1 font-mono">{membership.detail}</p>}
+                        </div>
+
+                        {!entitlement.tools && (
                           <button
                             onClick={() => {
                               setMenuOpen(false);
@@ -147,36 +164,10 @@ export const Header: React.FC = () => {
                           >
                             <span className="flex items-center gap-1.5">
                               <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin-hover" />
-                              Upgrade to Premium Pro
+                              Get palette with vixxiv membership
                             </span>
                             <span className="text-[9px] uppercase tracking-wider opacity-85">Go</span>
                           </button>
-                        ) : (
-                          <div className="p-2 rounded text-xs bg-emerald-50/50 border border-emerald-100 text-slate-700 font-sans">
-                            <p className="font-bold text-emerald-800 flex items-center gap-1">
-                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                              PRO Membership Active
-                            </p>
-                            <p className="text-[9px] text-slate-500 mt-1 font-mono">
-                              Plan: {userSubscription.pricingPlan || "Beta Access"} <br />
-                              {userSubscription.tier === "pro-lifetime"
-                                ? "Lifetime access — never expires"
-                                : `${userSubscription.subscriptionStatus === "canceling" ? "Ends" : "Renews"}: ${userSubscription.premiumExpires ? new Date(userSubscription.premiumExpires).toLocaleDateString() : "—"}`}
-                            </p>
-                            {userSubscription.tier !== "pro-lifetime" && userSubscription.subscriptionStatus !== "canceling" && (
-                              <button
-                                onClick={() => {
-                                  if (window.confirm("Cancel your subscription? You'll keep Pro access until the end of the current billing period.")) {
-                                    setMenuOpen(false);
-                                    cancelSubscription();
-                                  }
-                                }}
-                                className="mt-2 text-[9px] uppercase tracking-wider font-bold text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
-                              >
-                                Cancel subscription
-                              </button>
-                            )}
-                          </div>
                         )}
 
                         <div className="flex items-center space-x-2 p-2 rounded text-xs text-slate-600 bg-slate-50">
@@ -212,8 +203,6 @@ export const Header: React.FC = () => {
           </AnimatePresence>
         </div>
       </div>
-
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </header>
   );
 };

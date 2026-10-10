@@ -1,15 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail,
-  sendEmailVerification,
-  updateProfile,
-  User
-} from "firebase/auth";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import {
   collection,
   addDoc,
@@ -20,20 +10,29 @@ import {
   where,
   serverTimestamp,
   orderBy,
-  getDoc,
-  setDoc
+  onSnapshot,
 } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
 import {
   auth,
   db,
-  googleProvider,
-  functions,
+  hubDb,
   isFirebaseConfigured,
   handleFirestoreError,
   OperationType
 } from "../firebase";
-import { Palette, ColorItem, HarmonyMode, UserSubscription } from "../types";
+import { Palette, ColorItem, HarmonyMode } from "../types";
+import {
+  Entitlement,
+  Features,
+  NO_ENTITLEMENT,
+  StatusNotice,
+  entitlementFromToken,
+  featuresFor,
+  harmonyAllowed,
+  statusNotice,
+} from "../entitlement";
+import { watchEntitlement } from "../vendor/vixxiv-auth.js";
+import { signInUrl } from "../hub";
 import { generateHarmony, getRandomHex, ColorRole, hexToRgb, rgbToHsl, offsetColor } from "../utils/colorUtils";
 
 interface AppContextType {
@@ -46,20 +45,13 @@ interface AppContextType {
   harmonyMode: HarmonyMode;
   notification: { message: string; type: "success" | "info" | "error" } | null;
   
-  // Subscription / Monetization State
-  userSubscription: UserSubscription;
-  loadingSub: boolean;
+  // Entitlement — from the vixxiv-id ID token (tier/client claims). The hub
+  // owns billing; palette only reads.
+  entitlement: Entitlement;
+  features: Features;
+  membership: StatusNotice;
   showUpgradeModal: boolean;
   setShowUpgradeModal: (show: boolean) => void;
-  // Real Square checkout: takes a tokenized card from the Web Payments SDK,
-  // charges via the backend Cloud Function, then refreshes the local tier.
-  purchasePro: (
-    plan: 'monthly' | 'annual' | 'lifetime',
-    token: string,
-    verificationToken?: string
-  ) => Promise<void>;
-  cancelSubscription: () => Promise<void>;
-  refreshSubscription: () => Promise<void>;
 
   // Color controls
   setColors: React.Dispatch<React.SetStateAction<ColorItem[]>>;
@@ -82,11 +74,8 @@ interface AppContextType {
   addColumn: () => void;
   removeColumn: (index: number) => void;
   
-  // Auth & Storage DB controls
-  loginWithGoogle: () => Promise<void>;
-  registerWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
-  loginWithEmail: (email: string, password: string) => Promise<void>;
-  sendReset: (email: string) => Promise<void>;
+  // Auth (the hub's sign-in page) & storage controls
+  signIn: () => void;
   logout: () => Promise<void>;
   saveCurrentPalette: (name: string) => Promise<void>;
   deleteSavedPalette: (paletteId: string) => Promise<void>;
@@ -104,13 +93,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loadingPalettes, setLoadingPalettes] = useState(false);
   const [notification, setNotification] = useState<AppContextType["notification"]>(null);
 
-  // Subscription Details States
-  const [userSubscription, setUserSubscription] = useState<UserSubscription>({
-    tier: "free",
-    updatedAt: new Date().toISOString()
-  });
-  const [loadingSub, setLoadingSub] = useState(false);
+  // Entitlement from the hub. Signed out = no entitlement.
+  const [entitlement, setEntitlement] = useState<Entitlement>(NO_ENTITLEMENT);
+  const [membership, setMembership] = useState<StatusNotice>(statusNotice("none"));
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const features = featuresFor(entitlement);
 
   // Default color palette setup initialized with brand colors: #1a1a1a, #d1c69e, #2589BD, #f4f4f4
   const [currentColors, setColorsState] = useState<ColorItem[]>([
@@ -152,134 +139,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return unsubscribe;
   }, []);
 
-  // Fetch subscription tier status
-  const fetchSubscription = async (uid: string) => {
-    // NOTE: comp / admin access will be granted server-side via the upcoming
-    // admin tooling (backend writes the tier through the Admin SDK). There is
-    // intentionally no client-side tier override here.
-    setLoadingSub(true);
-    if (isFirebaseConfigured && db) {
-      try {
-        const userRef = doc(db, "users", uid);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          setUserSubscription({
-            tier: data.tier || "free",
-            subscriptionId: data.subscriptionId,
-            subscriptionStatus: data.subscriptionStatus,
-            premiumExpires: data.premiumExpires,
-            pricingPlan: data.pricingPlan,
-            updatedAt: data.updatedAt?.toDate?.() || new Date()
-          });
-        } else {
-          const defaultSub: UserSubscription = {
-            tier: "free",
-            updatedAt: new Date()
-          };
-          await setDoc(userRef, {
-            userId: uid,
-            email: auth.currentUser?.email || "",
-            tier: "free",
-            updatedAt: serverTimestamp()
-          });
-          setUserSubscription(defaultSub);
-        }
-      } catch (err) {
-        console.error("Fetch subscription error:", err);
-      } finally {
-        setLoadingSub(false);
-      }
-    } else {
-      // Offline fallback: load from LocalStorage
-      try {
-        const stored = localStorage.getItem(`palette_generator_sub_${uid}`);
-        if (stored) {
-          setUserSubscription(JSON.parse(stored));
-        } else {
-          const defaultSub: UserSubscription = {
-            tier: "free",
-            updatedAt: new Date().toISOString()
-          };
-          localStorage.setItem(`palette_generator_sub_${uid}`, JSON.stringify(defaultSub));
-          setUserSubscription(defaultSub);
-        }
-      } catch (e) {
-        console.error("Local load premium fail:", e);
-      } finally {
-        setLoadingSub(false);
-      }
-    }
-  };
-
+  // Read entitlement off the ID token, and keep it fresh: the hub stamps
+  // users/{uid}.claimsSyncedAt whenever billing moves, and watchEntitlement
+  // (the hub's shared module) force-refreshes the token when it does.
+  // `status` is read from the same doc for display only (ADR-0001 §10 gap 2).
   useEffect(() => {
-    if (user) {
-      fetchSubscription(user.uid);
-    } else {
-      fetchSubscription("local_guest");
+    if (!user) {
+      setEntitlement(NO_ENTITLEMENT);
+      setMembership(statusNotice("none"));
+      return;
     }
+    let cancelled = false;
+    user.getIdTokenResult().then((t) => {
+      if (!cancelled) setEntitlement(entitlementFromToken(t));
+    });
+    if (!hubDb) return () => { cancelled = true; };
+    const unsubscribe = watchEntitlement({
+      user,
+      docRef: doc(hubDb, "users", user.uid),
+      onSnapshot,
+      onChange: (ent, data) => {
+        if (cancelled) return;
+        setEntitlement(ent);
+        setMembership(
+          statusNotice(data?.status, {
+            currentPeriodEnd: data?.currentPeriodEnd?.toDate?.() ?? null,
+            graceUntil: data?.graceUntil?.toDate?.() ?? null,
+            client: ent.client,
+          })
+        );
+      },
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [user]);
-
-  // Re-read the authoritative subscription tier from the backend/Firestore.
-  const refreshSubscription = async () => {
-    const uid = user ? user.uid : "local_guest";
-    await fetchSubscription(uid);
-  };
-
-  // Real Square checkout. The card is tokenized in the browser by Square's
-  // Web Payments SDK (see UpgradeModal); here we hand that single-use token to
-  // the backend, which performs the actual charge / subscription creation and
-  // grants the tier server-side. We then refresh from Firestore.
-  const purchasePro = async (
-    plan: 'monthly' | 'annual' | 'lifetime',
-    token: string,
-    verificationToken?: string
-  ) => {
-    if (!user) {
-      showToast("Please sign in before subscribing.", "error");
-      throw new Error("You must be signed in to subscribe.");
-    }
-    if (!isFirebaseConfigured || !functions) {
-      showToast("Billing is unavailable right now. Please try again later.", "error");
-      throw new Error("Billing backend is not configured.");
-    }
-
-    const callable = httpsCallable(functions, "createSubscription");
-    const res: any = await callable({ plan, token, verificationToken });
-
-    if (res?.data?.success) {
-      await fetchSubscription(user.uid);
-      showToast(`Unlocked PRO! ${res.data.pricingPlan || "Welcome aboard"}.`, "success");
-      setShowUpgradeModal(false);
-    } else {
-      throw new Error("Checkout did not complete.");
-    }
-  };
-
-  // Cancel a recurring subscription via the backend (schedules cancellation at
-  // period end through Square; the webhook finalizes the downgrade).
-  const cancelSubscription = async () => {
-    if (!user) {
-      showToast("Please sign in.", "error");
-      return;
-    }
-    if (userSubscription.tier === "pro-lifetime") {
-      showToast("Lifetime access can't be cancelled.", "info");
-      return;
-    }
-    if (!isFirebaseConfigured || !functions) {
-      showToast("Billing is unavailable right now.", "error");
-      return;
-    }
-    try {
-      const callable = httpsCallable(functions, "cancelSubscription");
-      await callable({});
-      await fetchSubscription(user.uid);
-      showToast("Your subscription will end at the close of the billing period.", "info");
-    } catch (err: any) {
-      showToast(err?.message || "Could not cancel subscription.", "error");
-    }
-  };
 
   // History sync manager: Record any valid structural change made by user, dropping invalid hex or traversal states
   useEffect(() => {
@@ -335,8 +230,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Add column adds color elements dynamically to the palette layout up to 10
   const addColumn = () => {
-    if (userSubscription.tier === "free" && currentColors.length >= 5) {
-      showToast("Free tier is limited to 5 color columns. Upgrade to PRO to unlock up to 10!", "error");
+    if (currentColors.length >= features.maxColumns && features.maxColumns < 10) {
+      showToast(`Preview is limited to ${features.maxColumns} color columns. vixxiv members get up to 10.`, "error");
       setShowUpgradeModal(true);
       return;
     }
@@ -382,9 +277,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Set harmony mode and update unlocked colors to fit the harmony mode
   const setHarmonyMode = (mode: HarmonyMode) => {
-    const isProHarmony = ["analogous", "complementary", "triadic", "tetradic", "split"].includes(mode);
-    if (isProHarmony && userSubscription.tier === "free") {
-      showToast(`The ${mode.toUpperCase()} harmony matches deep color science and is exclusive to PRO members.`, "error");
+    if (!harmonyAllowed(mode, features)) {
+      showToast(`The ${mode.toUpperCase()} harmony is included with vixxiv membership.`, "error");
       setShowUpgradeModal(true);
       return;
     }
@@ -577,8 +471,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const fetchPalettes = async () => {
     setLoadingPalettes(true);
     
-    // Auth mode
-    if (user && isFirebaseConfigured && db) {
+    // Cloud vault: members only (rules enforce the same — firestore.rules).
+    if (user && features.cloudVault && isFirebaseConfigured && db) {
       const qPath = "palettes";
       try {
         const palettesQuery = query(
@@ -625,114 +519,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     fetchPalettes();
-  }, [user]);
+  }, [user, features.cloudVault]);
 
-  // Auth Operations
-  const loginWithGoogle = async () => {
-    if (!isFirebaseConfigured || !auth || !googleProvider) {
-      showToast("Firebase account simulation activated. Signed in under Local Guest mode.", "info");
-      // Local Mock sign in
-      setUser({
-        uid: "local_sandbox_user",
-        displayName: "Guest Designer",
-        email: "guest@example.com",
-        photoURL: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100",
-      } as any);
-      return;
-    }
-    try {
-      await signInWithPopup(auth, googleProvider);
-      showToast("Logged in successfully with Google!", "success");
-    } catch (err) {
-      console.error("Google Auth Fail:", err);
-      showToast("Authentication interrupted", "error");
-    }
-  };
-
-  // Friendly mapping for the most common Firebase Auth error codes.
-  const authErrorMessage = (code: string): string => {
-    switch (code) {
-      case "auth/email-already-in-use":
-        return "That email already has an account. Try signing in instead.";
-      case "auth/invalid-email":
-        return "That doesn't look like a valid email address.";
-      case "auth/weak-password":
-        return "Password is too weak — use at least 6 characters.";
-      case "auth/invalid-credential":
-      case "auth/wrong-password":
-      case "auth/user-not-found":
-        return "Incorrect email or password.";
-      case "auth/too-many-requests":
-        return "Too many attempts. Please wait a moment and try again.";
-      default:
-        return "Authentication failed. Please try again.";
-    }
-  };
-
-  const registerWithEmail = async (email: string, password: string, displayName?: string) => {
-    if (!isFirebaseConfigured || !auth) {
-      showToast("Account creation is unavailable right now.", "error");
-      throw new Error("Auth not configured");
-    }
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      if (displayName && displayName.trim()) {
-        await updateProfile(cred.user, { displayName: displayName.trim() });
-      }
-      try {
-        await sendEmailVerification(cred.user);
-      } catch {
-        /* non-fatal — verification email is best-effort */
-      }
-      showToast("Account created! Check your inbox to verify your email.", "success");
-    } catch (err: any) {
-      const msg = authErrorMessage(err?.code || "");
-      showToast(msg, "error");
-      throw new Error(msg);
-    }
-  };
-
-  const loginWithEmail = async (email: string, password: string) => {
-    if (!isFirebaseConfigured || !auth) {
-      showToast("Sign-in is unavailable right now.", "error");
-      throw new Error("Auth not configured");
-    }
-    try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      showToast("Signed in successfully!", "success");
-    } catch (err: any) {
-      const msg = authErrorMessage(err?.code || "");
-      showToast(msg, "error");
-      throw new Error(msg);
-    }
-  };
-
-  const sendReset = async (email: string) => {
-    if (!isFirebaseConfigured || !auth) {
-      showToast("Password reset is unavailable right now.", "error");
-      throw new Error("Auth not configured");
-    }
-    try {
-      await sendPasswordResetEmail(auth, email.trim());
-      showToast("Password reset email sent. Check your inbox.", "success");
-    } catch (err: any) {
-      const msg = authErrorMessage(err?.code || "");
-      showToast(msg, "error");
-      throw new Error(msg);
-    }
+  // Sign-in belongs to the identity hub (ADR-0001 Brief 2). palette has no
+  // sign-in or sign-up UI; it sends the user to the hub and back here.
+  const signIn = () => {
+    window.location.assign(signInUrl(window.location.href));
   };
 
   const logout = async () => {
     if (!isFirebaseConfigured || !auth) {
       setUser(null);
-      setSavedPalettes([]);
-      showToast("Signed out of local guest profile", "info");
       return;
     }
     try {
       await signOut(auth);
       setSavedPalettes([]);
-      showToast("Logged out successfully", "success");
+      showToast("Signed out", "success");
     } catch (err) {
       console.error("Logout Fail:", err);
       showToast("Logout failed", "error");
@@ -741,8 +544,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Add a Palette
   const saveCurrentPalette = async (name: string) => {
-    if (userSubscription.tier === "free" && savedPalettes.length >= 2) {
-      showToast("Free tier is limited to 2 saved palettes. Upgrade to PRO to save unlimited palettes!", "error");
+    if (!features.cloudVault && savedPalettes.length >= features.maxLocalSaves) {
+      showToast(`Preview keeps ${features.maxLocalSaves} palettes in this browser. vixxiv members get an unlimited cloud vault.`, "error");
       setShowUpgradeModal(true);
       return;
     }
@@ -762,7 +565,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       locked: c.locked,
     }));
 
-    if (user && isFirebaseConfigured && db) {
+    if (user && features.cloudVault && isFirebaseConfigured && db) {
       const qPath = "palettes";
       try {
         await addDoc(collection(db, qPath), {
@@ -807,7 +610,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Delete a Palette
   const deleteSavedPalette = async (paletteId: string) => {
-    if (user && isFirebaseConfigured && db) {
+    if (user && features.cloudVault && isFirebaseConfigured && db) {
       const qPath = `palettes/${paletteId}`;
       try {
         const ref = doc(db, "palettes", paletteId);
@@ -841,7 +644,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Loaded palette "${palette.name}"`, "success");
   };
 
-  const isDbActive = isFirebaseConfigured;
+  const isDbActive = !!user && features.cloudVault;
 
   return (
     <AppContext.Provider
@@ -854,13 +657,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentColors,
         harmonyMode,
         notification,
-        userSubscription,
-        loadingSub,
+        entitlement,
+        features,
+        membership,
         showUpgradeModal,
         setShowUpgradeModal,
-        purchasePro,
-        cancelSubscription,
-        refreshSubscription,
         setColors,
         setHarmonyMode,
         updateColorIndex,
@@ -876,10 +677,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         canRedo,
         addColumn,
         removeColumn,
-        loginWithGoogle,
-        registerWithEmail,
-        loginWithEmail,
-        sendReset,
+        signIn,
         logout,
         saveCurrentPalette,
         deleteSavedPalette,

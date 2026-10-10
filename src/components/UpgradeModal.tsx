@@ -1,135 +1,28 @@
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 import { useApp } from "../context/AppContext";
-import {
-  X,
-  Check,
-  Sparkles,
-  ShieldCheck,
-  CreditCard,
-  Layers,
-  Bookmark,
-  Palette,
-  Flame,
-  ArrowRight,
-  AlertTriangle,
-} from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
-import { initSquareCard, isSquareConfigured, SQUARE_ENV } from "../utils/square";
+import { X, ShieldCheck, Layers, Bookmark, Palette, Flame, ArrowRight, Sparkles, LogIn } from "lucide-react";
+import { motion } from "motion/react";
+import { MEMBERSHIP_URL } from "../hub";
 
+/**
+ * Membership prompt. palette sells nothing itself: ADR-0001 makes Square the
+ * single billing truth, owned by the vixxiv-id hub, and membership is bought
+ * on vixxiv.com (R5). Tool access is Gold or Black, or the client flag (D4).
+ * All of palette's own Square code was removed in Brief 2.
+ */
 export const UpgradeModal: React.FC = () => {
-  const {
-    showUpgradeModal,
-    setShowUpgradeModal,
-    purchasePro,
-    userSubscription,
-    cancelSubscription,
-    user,
-  } = useApp();
-
-  const [billingPlan, setBillingPlan] = useState<"monthly" | "annual" | "lifetime">("annual");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [formError, setFormError] = useState("");
-  const [cardReady, setCardReady] = useState(false);
-
-  // Live Square Card payment-method instance (PCI-compliant hosted iframe).
-  const cardRef = useRef<any>(null);
-  const CARD_CONTAINER_ID = "square-card-container";
-
-  // Initialise the Square card form when the modal opens.
-  useEffect(() => {
-    if (!showUpgradeModal || !isSquareConfigured) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const card = await initSquareCard(CARD_CONTAINER_ID);
-        if (cancelled) {
-          card.destroy();
-          return;
-        }
-        cardRef.current = card;
-        setCardReady(true);
-      } catch (err: any) {
-        if (!cancelled) setFormError(err?.message || "Could not load secure card form.");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      setCardReady(false);
-      if (cardRef.current) {
-        try {
-          cardRef.current.destroy();
-        } catch {
-          /* ignore */
-        }
-        cardRef.current = null;
-      }
-    };
-  }, [showUpgradeModal]);
+  const { showUpgradeModal, setShowUpgradeModal, user, signIn, entitlement, membership } = useApp();
 
   if (!showUpgradeModal) return null;
 
-  let priceText = "$25";
-  let intervalText = "year (billed as $25/yr)";
-  if (billingPlan === "monthly") {
-    priceText = "$5";
-    intervalText = "month (billed as $5/mo)";
-  } else if (billingPlan === "lifetime") {
-    priceText = "$50";
-    intervalText = "lifetime (one-time charge)";
-  }
-
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError("");
-
-    if (!user) {
-      setFormError("Please sign in before subscribing.");
-      return;
-    }
-    if (!isSquareConfigured || !cardRef.current) {
-      setFormError("Secure payment form is not ready yet. Please wait a moment.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      // 1. Tokenize the card entirely inside Square's iframe.
-      const result = await cardRef.current.tokenize();
-      if (result.status !== "OK" || !result.token) {
-        const detail =
-          result.errors?.map((er: any) => er.message).join(" ") ||
-          "Please check your card details.";
-        throw new Error(detail);
-      }
-
-      // 2. Hand the single-use token to the backend, which performs the
-      //    actual charge / subscription and grants the tier server-side.
-      await purchasePro(billingPlan, result.token);
-
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        setShowUpgradeModal(false);
-      }, 2200);
-    } catch (err: any) {
-      setFormError(err?.message || "Payment failed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Dark overlay backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-        onClick={() => !isSubmitting && setShowUpgradeModal(false)}
+        onClick={() => setShowUpgradeModal(false)}
       />
 
       <motion.div
@@ -139,12 +32,10 @@ export const UpgradeModal: React.FC = () => {
         className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row relative z-10"
         id="upgrade-pro-dialog"
       >
-        {/* Close button */}
         <button
           onClick={() => setShowUpgradeModal(false)}
-          disabled={isSubmitting}
           className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer z-20"
-          title="Close Modal"
+          title="Close"
         >
           <X className="w-5 h-5" />
         </button>
@@ -157,7 +48,7 @@ export const UpgradeModal: React.FC = () => {
           <div className="relative z-10">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/10 text-[10px] uppercase font-mono tracking-widest text-[#d1c69e] mb-6">
               <Sparkles className="w-3 h-3 text-[#d1c69e]" />
-              <span>palette Pro</span>
+              <span>palette · vixxiv membership</span>
             </div>
 
             <h3 className="text-2xl md:text-3xl font-display font-black tracking-tight mb-2 leading-none">
@@ -175,7 +66,7 @@ export const UpgradeModal: React.FC = () => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-200">Expand up to 10 Color Columns</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the 4-column limit. Add up to 10 custom shades in a single workbench composition.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the 5-column preview. Add up to 10 custom shades in a single workbench composition.</p>
                 </div>
               </div>
 
@@ -195,7 +86,7 @@ export const UpgradeModal: React.FC = () => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-200">Unlimited Cloud Vault Space</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Archive as many palettes as you want. Standard accounts are capped at only 2 saved combomatrices.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Archive as many palettes as you want, synced to your vixxiv account. The preview keeps 2 in this browser only.</p>
                 </div>
               </div>
 
@@ -212,176 +103,45 @@ export const UpgradeModal: React.FC = () => {
           </div>
 
           <div className="relative z-10 pt-8 border-t border-white/10 mt-6 flex items-center justify-between text-[11px] text-slate-400">
-            <span className="flex items-center gap-1"><ShieldCheck className="w-4 h-4 text-emerald-400" /> Secured by Square</span>
-            <span>{SQUARE_ENV === "production" ? "Live payments" : "Sandbox mode"}</span>
+            <span className="flex items-center gap-1"><ShieldCheck className="w-4 h-4 text-emerald-400" /> One vixxiv account for every tool</span>
           </div>
         </div>
 
-        {/* Right: checkout */}
-        <div className="w-full md:w-1/2 p-6 md:p-8 bg-slate-50 flex flex-col justify-between overflow-y-auto max-h-[85vh] md:max-h-full">
-          <AnimatePresence mode="wait">
-            {success ? (
-              <motion.div
-                key="success-prompt"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="flex-1 flex flex-col items-center justify-center text-center py-12"
-              >
-                <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/20 animate-bounce">
-                  <Check className="w-8 h-8 stroke-[3]" />
-                </div>
-                <h4 className="text-lg font-display font-black text-slate-800 lowercase">payment authorized!</h4>
-                <p className="text-xs text-slate-500 mt-2 max-w-xs">
-                  Your premium access tier has been updated. Unlocked 10-column workspace, advanced mathematics, and unlimited collections.
-                </p>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="payment-flows"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex-1 flex flex-col justify-between"
-              >
-                <div>
-                  <h4 className="text-sm font-sans font-extrabold tracking-tight uppercase text-slate-400 mb-4 text-left">
-                    Select Your Premium Duration:
-                  </h4>
+        {/* Right: where to get access */}
+        <div className="w-full md:w-1/2 p-6 md:p-8 bg-slate-50 flex flex-col justify-center gap-4 text-left">
+          <h4 className="text-sm font-sans font-extrabold tracking-tight uppercase text-slate-400">
+            Included with vixxiv membership
+          </h4>
+          <p className="text-sm text-slate-700 font-sans">
+            The full palette lab comes with <strong>Gold</strong> and <strong>Black</strong> vixxiv memberships, and
+            with every vixxiv client account. Membership is purchased on vixxiv.com.
+          </p>
 
-                  {/* Plan selector */}
-                  <div className="grid grid-cols-3 gap-2 p-1 bg-slate-200/60 rounded-lg mb-6">
-                    <button
-                      type="button"
-                      onClick={() => setBillingPlan("monthly")}
-                      className={`py-2 px-1 text-xs font-sans font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer flex flex-col items-center justify-center ${billingPlan === "monthly" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-                    >
-                      <span>Monthly</span>
-                      <span className="text-[8px] opacity-70 font-mono mt-0.5 leading-none">$5/mo</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBillingPlan("annual")}
-                      className={`py-2 px-1 text-xs font-sans font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer flex flex-col items-center justify-center ${billingPlan === "annual" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-                    >
-                      <span>Annual</span>
-                      <span className="text-[8px] text-emerald-600 font-mono font-bold mt-0.5 leading-none">save 58%</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBillingPlan("lifetime")}
-                      className={`py-2 px-1 text-xs font-sans font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer flex flex-col items-center justify-center ${billingPlan === "lifetime" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-                    >
-                      <span>Lifetime</span>
-                      <span className="text-[8px] text-purple-600 font-mono font-bold mt-0.5 leading-none">Best Value</span>
-                    </button>
-                  </div>
+          {user && !entitlement.tools && membership.status !== "none" && (
+            <p className="text-xs text-amber-800 bg-amber-50 border-l-4 border-amber-400 p-2.5 rounded">
+              {membership.label}{membership.detail ? ` — ${membership.detail}` : ""}
+            </p>
+          )}
 
-                  {/* Price summary */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs mb-6 text-left">
-                    <p className="text-[10px] text-slate-400 uppercase font-sans font-bold tracking-wider">
-                      {billingPlan === "lifetime" ? "One-time price" : "Recurring price"}
-                    </p>
-                    <div className="flex items-baseline gap-1.5 mt-1">
-                      <span className="text-3xl font-display font-black text-slate-800">{priceText}</span>
-                      <span className="text-xs text-slate-500 font-sans">/ {intervalText}</span>
-                    </div>
-                    {billingPlan !== "lifetime" && (
-                      <p className="text-[10px] text-slate-400 mt-1.5 font-sans">
-                        Auto-renews until cancelled. Cancel anytime from your account menu.
-                      </p>
-                    )}
-                  </div>
+          <a
+            href={MEMBERSHIP_URL}
+            className="w-full mt-2 py-3 text-xs font-sans font-black uppercase tracking-wider text-white rounded-lg flex items-center justify-center gap-2 transition-all active:scale-98"
+            style={{ backgroundColor: "#7F345F" }}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>See memberships on vixxiv.com</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </a>
 
-                  {/* Checkout */}
-                  <form onSubmit={handleCheckout} className="space-y-4 text-left">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-2">
-                      <h5 className="text-[10px] uppercase tracking-wider font-mono font-bold text-slate-500 flex items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5 text-[#3e8e41]" />
-                        Square Secure Payment
-                      </h5>
-                      <span className="text-[8px] uppercase tracking-widest font-black text-[#7F345F] bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 font-mono">
-                        Square Gateway
-                      </span>
-                    </div>
-
-                    {!user && (
-                      <p className="text-xs text-amber-700 font-sans font-medium bg-amber-50 border-l-4 border-amber-400 p-2.5 rounded flex items-center gap-2">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        Please sign in first — your subscription is tied to your account.
-                      </p>
-                    )}
-
-                    {!isSquareConfigured && (
-                      <p className="text-xs text-rose-600 font-sans font-medium bg-rose-50 border-l-4 border-rose-500 p-2.5 rounded">
-                        Payment system is not configured yet. (Missing Square keys.)
-                      </p>
-                    )}
-
-                    {formError && (
-                      <p className="text-xs text-rose-500 font-sans font-medium bg-rose-50 border-l-4 border-rose-500 p-2.5 rounded">
-                        {formError}
-                      </p>
-                    )}
-
-                    {/* Square hosted card iframe mounts here */}
-                    <div>
-                      <label className="block text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wide mb-1 flex justify-between">
-                        <span>Card Details</span>
-                        <span className="text-[8px] text-slate-400 font-mono normal-case">hosted securely by Square</span>
-                      </label>
-                      <div
-                        id={CARD_CONTAINER_ID}
-                        className="bg-white border border-slate-200 rounded p-2 min-h-[44px]"
-                      />
-                      {!cardReady && isSquareConfigured && !formError && (
-                        <p className="text-[10px] text-slate-400 mt-1 font-mono">Loading secure card form…</p>
-                      )}
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !user || !isSquareConfigured || !cardReady}
-                      className="w-full mt-4 py-3 cursor-pointer text-xs font-sans font-black uppercase tracking-wider text-white rounded-lg flex items-center justify-center gap-2 transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: "#7F345F" }}
-                    >
-                      {isSubmitting ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Processing payment…</span>
-                        </div>
-                      ) : (
-                        <>
-                          <span>
-                            {billingPlan === "lifetime" ? "Pay" : "Subscribe"} {priceText} via Square
-                          </span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </>
-                      )}
-                    </button>
-                  </form>
-                </div>
-
-                <div className="text-center mt-6 text-[10px] text-slate-400">
-                  By upgrading you agree to our terms. {userSubscription.tier !== "free" && userSubscription.tier !== "pro-lifetime" && (
-                    <>
-                      Want to cancel your subscription?{" "}
-                      <button
-                        onClick={() => {
-                          cancelSubscription();
-                          setShowUpgradeModal(false);
-                        }}
-                        className="underline text-[#7F345F] hover:text-[#5F2445] font-bold inline cursor-pointer"
-                      >
-                        Cancel here
-                      </button>
-                      .
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {!user && (
+            <button
+              onClick={signIn}
+              className="w-full py-2.5 text-xs font-sans font-bold uppercase tracking-wider text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Already a member? Sign in</span>
+            </button>
+          )}
         </div>
       </motion.div>
     </div>
