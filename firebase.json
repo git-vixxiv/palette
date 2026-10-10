@@ -3,18 +3,38 @@
     {
       "target": "palette",
       "public": "dist",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
       "headers": [
         {
           "source": "**/*.@(js|css)",
-          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
         },
         {
           "source": "**",
           "headers": [
-            { "key": "X-Content-Type-Options", "value": "nosniff" },
-            { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "strict-origin-when-cross-origin"
+            }
           ]
         }
       ]
@@ -32,16 +52,44 @@
       "source": "functions",
       "codebase": "palette",
       "runtime": "nodejs22",
-      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"],
-      "ignore": ["node_modules", ".git", "*.local"]
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ],
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.local"
+      ]
     }
   ],
   "emulators": {
-    "auth": { "port": 9399 },
-    "firestore": { "port": 8085 },
-    "functions": { "port": 5012 },
-    "hosting": { "port": 5002 },
-    "ui": { "enabled": false },
+    "auth": {
+      "port": 9399
+    },
+    "firestore": {
+      "port": 8085
+    },
+    "functions": {
+      "port": 5012
+    },
+    "hosting": {
+      "port": 5002
+    },
+    "hub": {
+      "port": 4410
+    },
+    "logging": {
+      "port": 4510
+    },
+    "eventarc": {
+      "port": 9310
+    },
+    "tasks": {
+      "port": 9510
+    },
+    "ui": {
+      "enabled": false
+    },
     "singleProjectMode": true
   }
 }

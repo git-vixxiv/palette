@@ -12,3 +12,6 @@ coverage/
 # functions build output / deps (also covered by functions/.gitignore)
 functions/lib/
 functions/node_modules/
+
+# emulator logs
+*-debug.log

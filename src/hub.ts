@@ -14,7 +14,8 @@
  * defined yet (gap G2), so it is configuration.
  */
 
-const env = import.meta.env;
+// `?? {}` so the module also loads under `node --test` (no Vite).
+const env: Record<string, string | undefined> = (import.meta as any).env ?? {};
 
 /** auth.vixxiv.com once DNS exists; the deployed hub site until then. */
 export const HUB_SIGN_IN_URL: string =
