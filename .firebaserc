@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "vixxiv-id"
+  },
+  "targets": {
+    "vixxiv-id": {
+      "hosting": {
+        "palette": ["vixxiv-id-palette"]
+      }
+    }
+  }
+}

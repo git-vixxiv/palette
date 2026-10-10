@@ -1,19 +1,34 @@
 rules_version = '2';
+
+// palette — rules for the NAMED Firestore database `palette` in vixxiv-id.
+// (ADR-0001 Brief 2: "move data to a named Firestore database ... inside
+// vixxiv-id".) These rules never apply to the hub's (default) database; the
+// hub's own rules live in git-vixxiv/vixxiv-id and palette does not edit them.
+//
+// Entitlement is read from the vixxiv-id ID token's custom claims, set by the
+// hub's syncCustomClaims: tool access = client == true OR tier in {gold, black}
+// (ADR-0001 D4; hub functions/src/tiers.ts unlocksTools). Access stops the
+// moment the claim drops (R8): a lapsed member can neither read nor write their
+// palettes. The documents are retained until the hub's purge queue tells
+// palette's purge worker to delete them (ADR-0001 §10 gap 4).
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. Global Safety Net: Default Deny All
+    // Default deny.
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // 2. Globally Hardened Helper Primitives
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isEmailVerified() {
-      return request.auth.token.email_verified == true;
+    function hasTools() {
+      return isSignedIn() && (
+        request.auth.token.get('client', false) == true
+        || request.auth.token.get('tier', 'none') in ['gold', 'black']
+      );
     }
 
     function isOwner(userId) {
@@ -21,7 +36,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\-]+$');
     }
 
     function incoming() {
@@ -32,57 +47,27 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Enforce schema validation for a color palette
     function isValidPalette(data) {
-      return data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid
+      return data.keys().hasOnly(['userId', 'name', 'harmonyMode', 'colors', 'createdAt', 'updatedAt'])
+        && data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid
         && data.name is string && data.name.size() > 0 && data.name.size() <= 64
         && data.harmonyMode is string && data.harmonyMode.size() <= 32
         && data.colors is list && data.colors.size() >= 3 && data.colors.size() <= 10;
     }
 
-    // Enforce schema validation for a user subscription profile
-    function isValidUserProfile(data) {
-      return data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid
-        && data.tier is string && (data.tier == 'free' || data.tier == 'pro-monthly' || data.tier == 'pro-annual' || data.tier == 'pro-lifetime')
-        && (data.email is string ? (data.email.size() <= 256) : true);
-    }
-
-    // Billing-controlled fields may ONLY be written by the trusted backend
-    // (Cloud Functions via the Admin SDK bypass these rules). The client is
-    // never allowed to set or change these, which prevents a user from
-    // self-granting a paid tier from the browser console.
-    function billingFieldsUnchanged(incomingData, existingData) {
-      return incomingData.tier == existingData.tier
-        && incomingData.get('subscriptionId', '') == existingData.get('subscriptionId', '')
-        && incomingData.get('subscriptionStatus', '') == existingData.get('subscriptionStatus', '')
-        && incomingData.get('premiumExpires', '') == existingData.get('premiumExpires', '')
-        && incomingData.get('pricingPlan', '') == existingData.get('pricingPlan', '');
-    }
-
-    // On first profile creation the client may only ever start on the free tier
-    // with no active subscription metadata.
-    function isCleanFreeProfile(data) {
-      return data.tier == 'free'
-        && data.get('subscriptionStatus', '') != 'active'
-        && data.get('subscriptionId', '') == ''
-        && data.get('pricingPlan', '') == '';
-    }
-
-    // 3. Match Block for User Saved Palettes
     match /palettes/{paletteId} {
-      
-      allow get: if isSignedIn() && isOwner(existing().userId);
-      
-      // Query Enforcer: Lists must be scoped to the authenticated user's ID
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if hasTools() && isOwner(existing().userId);
 
-      allow create: if isSignedIn() 
+      // Lists must be scoped to the caller's own userId.
+      allow list: if hasTools() && resource.data.userId == request.auth.uid;
+
+      allow create: if hasTools()
         && isValidId(paletteId)
         && isOwner(incoming().userId)
         && isValidPalette(incoming())
         && incoming().createdAt == request.time;
 
-      allow update: if isSignedIn()
+      allow update: if hasTools()
         && isValidId(paletteId)
         && isOwner(existing().userId)
         && isOwner(incoming().userId)
@@ -90,38 +75,7 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;
 
-      allow delete: if isSignedIn() 
-        && isOwner(existing().userId);
-    }
-
-    // 4. Match Block for User Profiles & Billing Tiers
-    //
-    // IMPORTANT: tier / subscription fields are granted by the backend only.
-    // The client may create its own profile on the free tier and edit
-    // non-billing fields, but can never elevate its own tier. All paid-tier
-    // writes happen in Cloud Functions through the Admin SDK, which is not
-    // subject to these rules.
-    match /users/{userId} {
-      allow get: if isSignedIn() && isOwner(userId);
-
-      // Client may only ever create a clean, free-tier profile for itself.
-      allow create: if isSignedIn()
-        && isValidId(userId)
-        && isOwner(userId)
-        && isValidUserProfile(incoming())
-        && isCleanFreeProfile(incoming())
-        && incoming().updatedAt == request.time;
-
-      // Client may update non-billing fields, but the billing fields must be
-      // identical to what is already stored (only the backend can change them).
-      allow update: if isSignedIn()
-        && isValidId(userId)
-        && isOwner(userId)
-        && isValidUserProfile(incoming())
-        && billingFieldsUnchanged(incoming(), existing())
-        && incoming().updatedAt == request.time;
-
-      allow delete: if false; // Profiles are read/write but non-deletable from the client
+      allow delete: if hasTools() && isOwner(existing().userId);
     }
   }
 }
