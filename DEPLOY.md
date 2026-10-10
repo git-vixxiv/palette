@@ -1,170 +1,108 @@
-# palette by vixxiv — Go-Live Runbook
+# palette — deploy runbook (vixxiv-id)
 
-Everything in the codebase is wired for **real Firebase accounts** (Google +
-email/password) and **real Square billing** (auto-renewing monthly/annual
-subscriptions + one-time lifetime). What remains is connecting your accounts.
-Do the steps in order.
+ADR-0001 Brief 2. palette is a client of the vixxiv-id identity hub: its Auth,
+billing and user records are the hub's. This repo deploys three things into
+project `vixxiv-id`, and only these:
+
+| What | Deploy filter | Touches |
+|---|---|---|
+| Hosting site `vixxiv-id-palette` | `hosting:palette` | that site only |
+| Firestore rules + indexes for database `palette` | `firestore:palette` | the named database only, never `(default)` |
+| Functions codebase `palette` (purge worker) | `functions:palette` | `palettePurgeOnQueue`, `palettePurgeSweep` only |
+
+**Never run a bare `firebase deploy` from this repo.** Always use the filters
+below. The codebase name stops a palette deploy from offering to delete the
+hub's functions; the filters stop it touching the hub's rules or sites.
+
+Kit deployed nothing. Every step below is Joe's (or Sam's with Joe's sign-off).
 
 ---
 
-## 1. Firebase project
+## 0. Preconditions
+
+1. The hub's Functions are deployed (`syncCustomClaims` sets the `tier`/`client`
+   claims palette gates on; `scheduledPurge` writes `purgeQueue`). Until then,
+   every signed-in user looks like tier `none` to palette.
+2. `vixxiv-id` is on Blaze (named databases and Functions need it).
+3. **Change request CR-1 is resolved** (see `docs/BRIEF-2-PALETTE.md`). Until the
+   hub hands a session to app origins, a user who signs in at the hub returns
+   to palette signed out. Do not cut `palette.vixxiv.com` over before this.
+
+## 1. Create the database and the site (once)
 
 ```bash
-firebase login                       # one-time, pick the right Google account
-firebase projects:create palette-vixxiv --display-name "palette by vixxiv"
-firebase use palette-vixxiv
+firebase firestore:databases:create palette --location=nam5 --project vixxiv-id
+firebase hosting:sites:create vixxiv-id-palette --project vixxiv-id
 ```
 
-Then in the [Firebase console](https://console.firebase.google.com):
+`nam5` matches the hub's `(default)` database (hub DEPLOY.md §1). `.firebaserc`
+already maps target `palette` → `vixxiv-id-palette`.
 
-- **Upgrade to the Blaze (pay-as-you-go) plan** — required for Cloud Functions.
-- **Build → Authentication → Get started** → enable **Google** and
-  **Email/Password** providers.
-- **Build → Firestore Database → Create database** (Production mode).
-
-Register a web app and pull its config into `firebase-applet-config.json`:
+## 2. Build and deploy
 
 ```bash
-firebase apps:create web "palette web"
-firebase apps:sdkconfig web > tmp-config.txt   # copy the values into firebase-applet-config.json
-```
-
-`firebase-applet-config.json` must end up with real values for: `apiKey`,
-`authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`.
-Leave `firestoreDatabaseId` as `(default)` unless you created a named DB.
-
-## 2. Square configuration
-
-In the [Square Developer dashboard](https://developer.squareup.com/apps):
-
-- Note your **Application ID**, **Access Token**, and **Location ID**
-  (Sandbox set first; Production set when going live).
-
-Create the subscription plans (run once, from `functions/`):
-
-```bash
-cd functions
-SQUARE_ACCESS_TOKEN=<token> SQUARE_ENVIRONMENT=sandbox npm run setup:plans
-# → prints SQUARE_PLAN_MONTHLY=... and SQUARE_PLAN_ANNUAL=...
-```
-
-Fill in **`functions/.env`** (copy from `functions/.env.example`):
-
-```
-SQUARE_ENVIRONMENT=sandbox
-SQUARE_LOCATION_ID=<location id>
-SQUARE_PLAN_MONTHLY=<from setup script>
-SQUARE_PLAN_ANNUAL=<from setup script>
-LIFETIME_PRICE_CENTS=5000
-SQUARE_WEBHOOK_URL=https://us-central1-palette-vixxiv.cloudfunctions.net/squareWebhook
-```
-
-Store the secrets (never in a file):
-
-```bash
-firebase functions:secrets:set SQUARE_ACCESS_TOKEN
-firebase functions:secrets:set SQUARE_WEBHOOK_SIGNATURE_KEY   # from the webhook step below
-```
-
-Fill in the **frontend** `.env.local` at the repo root (copy from `.env.example`):
-
-```
-VITE_SQUARE_APP_ID=<application id>
-VITE_SQUARE_LOCATION_ID=<location id>
-VITE_SQUARE_ENV=sandbox
-```
-
-## 3. Deploy
-
-```bash
-# from repo root
-firebase deploy --only firestore:rules
-firebase deploy --only functions
+npm ci
+npm --prefix functions ci
+npm test                 # emulators only
+npm run check:hub        # vendored hub module has not drifted
 npm run build
-firebase deploy --only hosting
+firebase deploy --project vixxiv-id --only firestore:palette,functions:palette,hosting:palette
 ```
 
-## 4. Square webhook
+Kit could not run the deploy command (no production access), so the
+`firestore:palette` filter syntax is unverified here. Add `--dry-run` the first
+time and confirm it lists only the `palette` database.
 
-In the Square dashboard → your app → **Webhooks → Subscriptions**:
+The site is then live at `https://vixxiv-id-palette.web.app`.
 
-- URL: `https://us-central1-palette-vixxiv.cloudfunctions.net/squareWebhook`
-- Subscribe to events: `subscription.updated`, `invoice.payment_made`,
-  `invoice.scheduled_charge_failed`, `invoice.payment_failed`.
-- Copy the **Signature Key** → `firebase functions:secrets:set SQUARE_WEBHOOK_SIGNATURE_KEY`,
-  then redeploy functions.
+Optional: set `VITE_HUB_SIGN_IN_URL=https://vixxiv-id-auth.web.app/` in
+`.env.production.local` before building, until `auth.vixxiv.com` DNS exists.
+Set `VITE_MEMBERSHIP_URL` once the vixxiv.com Tools page exists.
 
-## 5. Custom domain
+## 3. Move `palette.vixxiv.com` (Joe — DNS and console)
 
-Firebase console → **Hosting → Add custom domain → `palette.vixxiv.com`**, then
-add the TXT/A records it gives you at the vixxiv DNS host. (The repo `CNAME`
-file is a GitHub-Pages artifact and is not used by Firebase Hosting.)
+**Observed 2026-10-10:** `palette.vixxiv.com` is already served by Firebase
+Hosting from the OLD project `palette-4df37` (A records `151.101.1.195`,
+`151.101.65.195`). A custom domain can be attached to one Hosting site at a time.
 
-## 6. Production cutover (sandbox → live Square)
+1. Console → project `palette-4df37` → Hosting → remove custom domain
+   `palette.vixxiv.com`. (The site goes dark here; do steps 1–3 together.)
+2. Console → project `vixxiv-id` → Hosting → `vixxiv-id-palette` → Add custom
+   domain `palette.vixxiv.com`. It prints the records.
+3. DNS at the vixxiv.com zone (nameservers observed: `ns-us01/ns-us02.webhostcluster.com`,
+   i.e. MechanicWeb cPanel → Zone Editor):
 
-Square keeps **sandbox and production fully separate** — different credentials,
-a different catalog, and different webhooks. Nothing sandbox carries over, so we
-recreate the same setup against live keys. It's the steps below repeated with
-production values (~10 min) and is fully reversible (flip the values back).
+| Type | Name | Value | Note |
+|---|---|---|---|
+| TXT | `palette.vixxiv.com` | `hosting-site=vixxiv-id-palette` (exact string **as the console prints it**) | ownership check for the new site |
+| A | `palette.vixxiv.com` | `151.101.1.195` | already present — keep if the console prints the same |
+| A | `palette.vixxiv.com` | `151.101.65.195` | already present — keep if the console prints the same |
 
-### Prerequisites — only go live once all are true
-- Sandbox flow fully tested: signup, all three plans, cancel, and webhook sync
-  (renewal / cancellation reflected in Firestore).
-- The Square account is **activated for live payments** (business details + bank
-  account on file — required before production credentials can actually charge).
-- Custom domain + Auth authorized domains are live, so you test on
-  `palette.vixxiv.com`.
-- Final prices confirmed (these bake into the production catalog): currently
-  **$5/mo, $25/yr, $50 lifetime**.
+   If the console prints different A values, replace both. Alternative: one
+   `CNAME palette.vixxiv.com → vixxiv-id-palette.web.app` instead of the two A
+   records — never both.
 
-### What changes
-| Where | Sandbox | Production |
-|-------|---------|-----------|
-| `VITE_SQUARE_APP_ID` (`.env.local`) | `sandbox-sq0idb-…` | live `sq0idp-…` |
-| `VITE_SQUARE_LOCATION_ID` (`.env.local`) | sandbox location | live location ID |
-| `VITE_SQUARE_ENV` (`.env.local`) | `sandbox` | `production` |
-| `SQUARE_ACCESS_TOKEN` (secret) | sandbox token | production token |
-| `SQUARE_ENVIRONMENT` (`functions/.env`) | `sandbox` | `production` |
-| `SQUARE_LOCATION_ID` (`functions/.env`) | sandbox location | live location ID |
-| `SQUARE_PLAN_MONTHLY` / `_ANNUAL` (`functions/.env`) | sandbox IDs | recreated in prod catalog |
-| `SQUARE_WEBHOOK_SIGNATURE_KEY` (secret) | sandbox key | new key from prod webhook |
+4. Wait for **Connected** and the certificate.
 
-`SQUARE_WEBHOOK_URL` is unchanged (same function URL). The frontend SDK loader
-auto-switches to Square's production JS when `VITE_SQUARE_ENV=production`.
+## 4. Retire the old homes (Joe)
 
-### Steps
+- **GitHub Pages `colorpro.vixxiv.com`.** `git-vixxiv/palette` Pages builds from
+  `main` with custom domain `colorpro.vixxiv.com` (observed via the GitHub API).
+  That name has **no DNS record** today, so nothing is served there. Settings →
+  Pages → remove the custom domain and unpublish. This branch deletes the
+  `CNAME` file; merge it only after step 3.
+- **`palette-4df37`.** Before deleting anything, check Auth → Users and
+  Firestore `palettes` for real data (see gap G4). Then delete its Functions
+  (`createSubscription`, `cancelSubscription`, `squareWebhook`) and remove any
+  Square sandbox webhook subscription pointing at it. The ADR (§8) says the
+  project becomes data-only or is retired.
+
+## Local development
+
 ```bash
-# 1. Production access-token secret
-firebase functions:secrets:set SQUARE_ACCESS_TOKEN --project palette-4df37   # paste PROD token
-
-# 2. Recreate the plans in the PRODUCTION catalog → new variation IDs
-cd functions
-SQUARE_ACCESS_TOKEN=<prod-token> SQUARE_ENVIRONMENT=production npm run setup:plans
-
-# 3. Edit functions/.env  -> SQUARE_ENVIRONMENT=production, live location, new plan IDs
-#    Edit .env.local       -> live VITE_SQUARE_APP_ID / _LOCATION_ID, VITE_SQUARE_ENV=production
-
-# 4. Redeploy
-cd ..
-firebase deploy --only functions --project palette-4df37
-npm run build && firebase deploy --only hosting --project palette-4df37
+npm install
+VITE_USE_EMULATORS=1 npm run dev
+firebase emulators:start --project vixxiv-id --only auth,firestore,functions
 ```
 
-### 7. Production webhook
-Register a **new** webhook in Square's **Production** environment (separate from
-sandbox) pointing at
-`https://us-central1-palette-4df37.cloudfunctions.net/squareWebhook`, subscribe
-to the same events, copy its **Signature Key**, then:
-```bash
-firebase functions:secrets:set SQUARE_WEBHOOK_SIGNATURE_KEY --project palette-4df37
-firebase deploy --only functions --project palette-4df37
-```
-
-### 8. Smoke test in production
-Run one real purchase with a real card, confirm the tier grants and the
-subscription appears in the Square dashboard, then cancel/refund as needed.
-
----
-
-### Test cards (Square sandbox)
-`4111 1111 1111 1111`, any future expiry, any CVV, any postal code.
+Auth emulator on **9399** (TourBox holds 9099), Firestore 8085, Functions 5012.
