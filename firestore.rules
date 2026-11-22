@@ -56,7 +56,29 @@ service cloud.firestore {
         && incomingData.get('subscriptionId', '') == existingData.get('subscriptionId', '')
         && incomingData.get('subscriptionStatus', '') == existingData.get('subscriptionStatus', '')
         && incomingData.get('premiumExpires', '') == existingData.get('premiumExpires', '')
+        && incomingData.get('premiumExpiresAt', null) == existingData.get('premiumExpiresAt', null)
+        && incomingData.get('squareCustomerId', '') == existingData.get('squareCustomerId', '')
         && incomingData.get('pricingPlan', '') == existingData.get('pricingPlan', '');
+    }
+
+    // Server-side view of "does this signed-in user currently have Pro?".
+    // Reads the profile the backend maintains. Monthly/annual plans stay
+    // valid until premiumExpiresAt plus a 3-day grace period (covers payment
+    // retries and webhook delay); lifetime never lapses.
+    function hasProAccess() {
+      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return profile.tier == 'pro-lifetime'
+        || ((profile.tier == 'pro-monthly' || profile.tier == 'pro-annual')
+            && profile.get('premiumExpiresAt', null) != null
+            && request.time < profile.premiumExpiresAt + duration.value(3, 'd'));
+    }
+
+    // Free accounts get exactly two palette slots with fixed document IDs, so
+    // the 2-palette cap is enforced here and cannot be bypassed from the
+    // browser. Pro accounts may create palettes under any valid ID.
+    function isFreePaletteSlot(paletteId) {
+      return paletteId == request.auth.uid + '_slot1'
+        || paletteId == request.auth.uid + '_slot2';
     }
 
     // On first profile creation the client may only ever start on the free tier
@@ -80,7 +102,8 @@ service cloud.firestore {
         && isValidId(paletteId)
         && isOwner(incoming().userId)
         && isValidPalette(incoming())
-        && incoming().createdAt == request.time;
+        && incoming().createdAt == request.time
+        && (isFreePaletteSlot(paletteId) || hasProAccess());
 
       allow update: if isSignedIn()
         && isValidId(paletteId)

@@ -175,7 +175,7 @@ export const UpgradeModal: React.FC = () => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-200">Expand up to 10 Color Columns</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the 4-column limit. Add up to 10 custom shades in a single workbench composition.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the 5-column limit. Add up to 10 custom shades in a single workbench composition.</p>
                 </div>
               </div>
 

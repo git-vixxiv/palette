@@ -56,7 +56,7 @@ SQUARE_LOCATION_ID=<location id>
 SQUARE_PLAN_MONTHLY=<from setup script>
 SQUARE_PLAN_ANNUAL=<from setup script>
 LIFETIME_PRICE_CENTS=5000
-SQUARE_WEBHOOK_URL=https://us-central1-palette-vixxiv.cloudfunctions.net/squareWebhook
+SQUARE_WEBHOOK_URL=https://us-central1-palette-4df37.cloudfunctions.net/squareWebhook
 ```
 
 Store the secrets (never in a file):
@@ -88,9 +88,9 @@ firebase deploy --only hosting
 
 In the Square dashboard → your app → **Webhooks → Subscriptions**:
 
-- URL: `https://us-central1-palette-vixxiv.cloudfunctions.net/squareWebhook`
+- URL: `https://us-central1-palette-4df37.cloudfunctions.net/squareWebhook`
 - Subscribe to events: `subscription.updated`, `invoice.payment_made`,
-  `invoice.scheduled_charge_failed`, `invoice.payment_failed`.
+  `invoice.scheduled_charge_failed`.
 - Copy the **Signature Key** → `firebase functions:secrets:set SQUARE_WEBHOOK_SIGNATURE_KEY`,
   then redeploy functions.
 

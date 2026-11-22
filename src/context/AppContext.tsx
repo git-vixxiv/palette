@@ -152,6 +152,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return unsubscribe;
   }, []);
 
+  // A monthly/annual plan only counts as Pro while it is paid through. The
+  // backend moves premiumExpires forward on every successful renewal, so once
+  // it is more than 3 days in the past (grace for payment retries / webhook
+  // delay) the account is treated as free. Mirrors hasProAccess() in
+  // firestore.rules. Lifetime never lapses.
+  const PRO_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+  const resolveEffectiveTier = (
+    tier: UserSubscription["tier"] | undefined,
+    premiumExpires?: string
+  ): UserSubscription["tier"] => {
+    if (tier === "pro-monthly" || tier === "pro-annual") {
+      const expires = premiumExpires ? Date.parse(premiumExpires) : NaN;
+      if (!Number.isFinite(expires) || expires + PRO_GRACE_MS < Date.now()) return "free";
+      return tier;
+    }
+    return tier || "free";
+  };
+
   // Fetch subscription tier status
   const fetchSubscription = async (uid: string) => {
     // NOTE: comp / admin access will be granted server-side via the upcoming
@@ -165,7 +183,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (userDoc.exists()) {
           const data = userDoc.data();
           setUserSubscription({
-            tier: data.tier || "free",
+            tier: resolveEffectiveTier(data.tier, data.premiumExpires),
             subscriptionId: data.subscriptionId,
             subscriptionStatus: data.subscriptionStatus,
             premiumExpires: data.premiumExpires,
@@ -765,14 +783,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user && isFirebaseConfigured && db) {
       const qPath = "palettes";
       try {
-        await addDoc(collection(db, qPath), {
+        const paletteData = {
           userId,
           name: cleanName,
           harmonyMode,
           colors: colorsClean,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+        if (userSubscription.tier === "free") {
+          // Free accounts own two fixed document slots; firestore.rules
+          // rejects any other palette ID, which is what enforces the cap.
+          const taken = new Set(savedPalettes.map((p) => p.id));
+          const slotId = [`${userId}_slot1`, `${userId}_slot2`].find((id) => !taken.has(id));
+          if (!slotId) {
+            showToast("Free tier is limited to 2 saved palettes. Upgrade to PRO to save unlimited palettes!", "error");
+            setShowUpgradeModal(true);
+            return;
+          }
+          await setDoc(doc(db, qPath, slotId), paletteData);
+        } else {
+          await addDoc(collection(db, qPath), paletteData);
+        }
         showToast("Palette saved directly to Firestore!", "success");
         await fetchPalettes();
       } catch (error) {
