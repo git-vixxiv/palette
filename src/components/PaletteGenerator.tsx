@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
-import { Lock, Unlock, Copy, Check, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Sparkles, FolderPlus, Eye, RotateCcw, RotateCw, Plus, X, Star } from "lucide-react";
+import { Lock, Unlock, Copy, Check, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Sparkles, FolderPlus, Eye, RotateCcw, RotateCw, Plus, X, Star, Sun, Moon } from "lucide-react";
 import { getLuminance, hexToRgb, getColorName } from "../utils/colorUtils";
 import { getSingleColorScore } from "../utils/paletteEngine";
 import { ColorRole, HarmonyMode } from "../types";
@@ -36,6 +36,25 @@ export const PaletteGenerator: React.FC = () => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [paletteName, setPaletteName] = useState("");
+
+  // Backdrop behind the colour cards. Colours read differently on light and
+  // dark surroundings, so the viewer can check a palette against both. The
+  // choice is remembered per browser; it is a viewing aid, not palette data.
+  const CANVAS_KEY = "palette_canvas_backdrop";
+  const [canvasDark, setCanvasDark] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(CANVAS_KEY) === "dark";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(CANVAS_KEY, canvasDark ? "dark" : "light");
+    } catch {
+      /* storage unavailable (private window): the toggle still works for this visit */
+    }
+  }, [canvasDark]);
 
   const handleCopy = (hex: string, index: number) => {
     navigator.clipboard.writeText(hex);
@@ -107,10 +126,13 @@ export const PaletteGenerator: React.FC = () => {
   };
 
   return (
-    <section className="w-full bg-transparent border-b border-gray-25 p-4 md:p-8 flex flex-col items-center">
+    <section
+      className="w-full border-b border-gray-25 p-4 md:p-8 flex flex-col items-center transition-colors duration-300"
+      style={{ backgroundColor: canvasDark ? "#101114" : "transparent" }}
+    >
       
       {/* Undo & Redo Action Bar - Positioned above columns & below Pro Tip bar */}
-      <div className="w-full max-w-7xl flex justify-center gap-3 mb-5">
+      <div className="w-full max-w-7xl flex flex-wrap justify-center items-center gap-3 mb-5">
         <button
           disabled={!canUndo}
           onClick={undo}
@@ -130,6 +152,38 @@ export const PaletteGenerator: React.FC = () => {
           <RotateCw className="w-3.5 h-3.5 text-slate-500" />
           <span className="hidden sm:inline">Redo</span>
         </button>
+
+        {/* Backdrop switch: view the palette on a light or dark surround */}
+        <div
+          role="group"
+          aria-label="Backdrop behind the colors"
+          className="flex items-center bg-white border border-slate-200 rounded shadow-3xs overflow-hidden"
+        >
+          <button
+            type="button"
+            onClick={() => setCanvasDark(false)}
+            aria-pressed={!canvasDark}
+            className={`py-2 px-3 font-bold uppercase tracking-wider text-[11px] transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              !canvasDark ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+            }`}
+            title="Show colors on a light backdrop"
+          >
+            <Sun className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Light</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCanvasDark(true)}
+            aria-pressed={canvasDark}
+            className={`py-2 px-3 font-bold uppercase tracking-wider text-[11px] transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              canvasDark ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+            }`}
+            title="Show colors on a dark backdrop"
+          >
+            <Moon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Dark</span>
+          </button>
+        </div>
       </div>
       
       {/* Dynamic Flex Palette Board - Responsive dual grid-to-flex layout */}
@@ -162,7 +216,7 @@ export const PaletteGenerator: React.FC = () => {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.25, type: "spring", stiffness: 100 }}
               style={{ backgroundColor: color.hex }}
-              className="relative rounded-xl p-2 sm:p-5 flex flex-col justify-between items-stretch overflow-hidden shadow-xs sm:hover:shadow-xl transition-all group border border-black/5 h-full w-full"
+              className={`relative rounded-xl p-2 sm:p-5 flex flex-col justify-between items-stretch overflow-hidden shadow-xs sm:hover:shadow-xl transition-all group border h-full w-full ${canvasDark ? "border-white/15" : "border-black/5"}`}
             >
               {/* Controls: Left (Remove), Right (Re-spin) and centered Shift Color below X */}
               <div className="flex flex-col z-10 shrink-0 w-full mb-1 sm:mb-2">
