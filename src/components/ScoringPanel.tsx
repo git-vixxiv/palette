@@ -1,6 +1,7 @@
 import React from "react";
 import { useApp } from "../context/AppContext";
-import { scorePalette, getContrastRatio } from "../utils/colorUtils";
+import { getContrastRatio } from "../utils/colorUtils";
+import { scorePalette, suggestRoles } from "../utils/paletteEngine";
 import { Award, CheckCircle, BookOpen, ThumbsUp, HelpCircle, Activity } from "lucide-react";
 
 export const ScoringPanel: React.FC = () => {
@@ -9,17 +10,13 @@ export const ScoringPanel: React.FC = () => {
   // Dynamically calculate quality metrics referencing current state
   const { score, breakdown, tips } = scorePalette(currentColors, harmonyMode);
 
-  // Auto layout recommendation fixer
+  // Assign each colour the role it is actually suited to (near-whites and
+  // near-blacks become neutrals, the most vivid spare colour the accent...).
   const autoFixColorRoles = () => {
-    // Intelligently assigns roles to fit ideal standards
-    // Index 0 -> Primary, Index 1 -> Accent, Index 2 -> Secondary, Index 3 -> Neutral-Light, Index 4 -> Neutral-Dark
-    setColors((prev) => [
-      { ...prev[0], role: "primary" },
-      { ...prev[1], role: "accent" },
-      { ...prev[2], role: "secondary" },
-      { ...prev[3], role: "neutral-light" },
-      { ...prev[4], role: "neutral-dark" },
-    ]);
+    setColors((prev) => {
+      const roles = suggestRoles(prev.map((c) => c.hex));
+      return prev.map((c, i) => ({ ...c, role: roles[i] }));
+    });
     showToast("Roles optimized for design harmony!", "success");
   };
 
@@ -40,7 +37,7 @@ export const ScoringPanel: React.FC = () => {
         return "Split-complementary pairs a base color with two adjacent adjacent colors of its complement (150° and 210°). Offers high visual contrast with less visual noise.";
       case "random":
       default:
-        return "Random selection provides high aesthetic variability. Assign custom roles and locks to tame the visual contrast, or apply a scientific harmony above!";
+        return "Each spin picks one of the harmony schemes for you, weighted toward the ones people rate highest, then builds it around your roles and locked colors.";
     }
   };
 

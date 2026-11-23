@@ -34,7 +34,8 @@ import {
   OperationType
 } from "../firebase";
 import { Palette, ColorItem, HarmonyMode, UserSubscription } from "../types";
-import { generateHarmony, getRandomHex, ColorRole, hexToRgb, rgbToHsl, offsetColor } from "../utils/colorUtils";
+import { getRandomHex, ColorRole } from "../utils/colorUtils";
+import { generatePalette } from "../utils/paletteEngine";
 
 interface AppContextType {
   user: User | null;
@@ -68,6 +69,7 @@ interface AppContextType {
   updateColorRole: (index: number, role: ColorRole) => void;
   toggleColorLock: (index: number) => void;
   regenerateUnlocked: () => void;
+  respinColor: (index: number) => void;
   spinPalette: () => void;
   isSpinning: boolean;
   previousColors: ColorItem[];
@@ -370,12 +372,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const missingRoles = roles.filter(r => !prev.some(col => col.role === r));
       const chosenRole = missingRoles.length > 0 ? missingRoles[0] : "secondary";
       
-      // Compute matching next harmony hex
-      const anchorIdx = prev.findIndex((c) => c.locked);
-      const anchorHex = anchorIdx !== -1 ? prev[anchorIdx].hex : prev[0].hex;
-      const newHexes = generateHarmony(harmonyMode, anchorHex, prev.length + 1);
-      const newHex = newHexes[newHexes.length - 1] || getRandomHex();
-      
+      // Generate the new colour for its role, treating every existing colour
+      // as fixed context so it is designed to sit with all of them.
+      const draft: ColorItem[] = [...prev, { hex: "#808080", role: chosenRole, locked: false }];
+      const newHex = generatePalette(draft, harmonyMode, {
+        fixed: draft.map((_, i) => i < prev.length),
+      })[prev.length];
+
       const updated = [
         ...prev,
         { hex: newHex, role: chosenRole, locked: false }
@@ -408,69 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setHarmonyState(mode);
-    setColors((prev) => {
-      // Find pivot color (first locked, or first color in list)
-      const pivotIndex = prev.findIndex((c) => c.locked);
-      const pivotHex = pivotIndex !== -1 ? prev[pivotIndex].hex : prev[0].hex;
-      
-      const existingHexes = new Set(prev.map(c => c.hex.toLowerCase()));
-      const assignedInThisRun = new Set<string>();
-
-      // Generate a pool of candidates
-      const candidates = generateHarmony(mode, pivotHex, 50);
-
-      return prev.map((item) => {
-        if (item.locked) return item;
-
-        let chosenHex = "";
-        for (const cand of candidates) {
-          const lowerCand = cand.toLowerCase();
-          if (!existingHexes.has(lowerCand) && !assignedInThisRun.has(lowerCand)) {
-            chosenHex = cand;
-            break;
-          }
-        }
-
-        if (!chosenHex) {
-          let attempts = 0;
-          while (attempts < 20) {
-            const offsetH = Math.floor(Math.random() * 360);
-            const offsetS = Math.floor(Math.random() * 40) - 20;
-            const offsetL = Math.floor(Math.random() * 40) - 20;
-            const randomHslOffset = offsetColor(rgbToHsl(hexToRgb(pivotHex)), offsetH, offsetS, offsetL);
-            const lowerOffset = randomHslOffset.toLowerCase();
-            if (!existingHexes.has(lowerOffset) && !assignedInThisRun.has(lowerOffset)) {
-              chosenHex = randomHslOffset;
-              break;
-            }
-            attempts++;
-          }
-        }
-
-        if (!chosenHex) {
-          let attempts = 0;
-          while (attempts < 20) {
-            const temp = getRandomHex();
-            const lowerTemp = temp.toLowerCase();
-            if (!existingHexes.has(lowerTemp) && !assignedInThisRun.has(lowerTemp)) {
-              chosenHex = temp;
-              break;
-            }
-            attempts++;
-          }
-        }
-
-        if (!chosenHex) {
-          chosenHex = getRandomHex();
-        }
-
-        assignedInThisRun.add(chosenHex.toLowerCase());
-        return {
-          ...item,
-          hex: chosenHex,
-        };
-      });
-    });
+    setColors((prev) => applyHexes(prev, generatePalette(prev, mode)));
     showToast(`Harmony updated to ${mode}`, "info");
   };
 
@@ -516,77 +457,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Regenerate unlocked colors with dynamic and random elements
+  const applyHexes = (items: ColorItem[], hexes: string[]) =>
+    items.map((item, i) => (item.hex === hexes[i] ? item : { ...item, hex: hexes[i] }));
+
+  // Regenerate every unlocked colour. Each one is built for its role and
+  // around all of the locked colours (see utils/paletteEngine).
   const regenerateUnlocked = () => {
-    setColors((prev) => {
-      // Determine base anchor color for harmony mode
-      const anchorIdx = prev.findIndex((c) => c.locked);
-      const anchorHex = anchorIdx !== -1 ? prev[anchorIdx].hex : getRandomHex();
-      
-      const existingHexes = new Set(prev.map(c => c.hex.toLowerCase()));
-      const assignedInThisRun = new Set<string>();
+    setColors((prev) => applyHexes(prev, generatePalette(prev, harmonyMode)));
+  };
 
-      // Generate a pool of candidates
-      const candidates = generateHarmony(harmonyMode, anchorHex, 50);
-
-      return prev.map((item) => {
-        if (item.locked) return item;
-
-        let chosenHex = "";
-        for (const cand of candidates) {
-          const lowerCand = cand.toLowerCase();
-          if (!existingHexes.has(lowerCand) && !assignedInThisRun.has(lowerCand)) {
-            chosenHex = cand;
-            break;
-          }
-        }
-
-        if (!chosenHex) {
-          let attempts = 0;
-          while (attempts < 20) {
-            const offsetH = Math.floor(Math.random() * 360);
-            const offsetS = Math.floor(Math.random() * 40) - 20;
-            const offsetL = Math.floor(Math.random() * 40) - 20;
-            const randomHslOffset = offsetColor(rgbToHsl(hexToRgb(anchorHex)), offsetH, offsetS, offsetL);
-            const lowerOffset = randomHslOffset.toLowerCase();
-            if (!existingHexes.has(lowerOffset) && !assignedInThisRun.has(lowerOffset)) {
-              chosenHex = randomHslOffset;
-              break;
-            }
-            attempts++;
-          }
-        }
-
-        if (!chosenHex) {
-          let attempts = 0;
-          while (attempts < 20) {
-            const temp = getRandomHex();
-            const lowerTemp = temp.toLowerCase();
-            if (!existingHexes.has(lowerTemp) && !assignedInThisRun.has(lowerTemp)) {
-              chosenHex = temp;
-              break;
-            }
-            attempts++;
-          }
-        }
-
-        if (!chosenHex) {
-          chosenHex = getRandomHex();
-        }
-
-        assignedInThisRun.add(chosenHex.toLowerCase());
-        return {
-          ...item,
-          hex: chosenHex,
-        };
-      });
-    });
+  // Regenerate one colour, keeping every other colour exactly as it is.
+  const respinColor = (index: number) => {
+    setColors((prev) =>
+      applyHexes(prev, generatePalette(prev, harmonyMode, { fixed: prev.map((_, i) => i !== index) }))
+    );
   };
 
   const [isSpinning, setIsSpinning] = useState(false);
   const [previousColors, setPreviousColors] = useState<ColorItem[]>([]);
 
   const spinPalette = () => {
+    if (currentColors.every((c) => c.locked)) {
+      showToast("Every colour is locked. Unlock at least one to spin.", "info");
+      return;
+    }
     regenerateUnlocked();
     showToast("Colors regenerated!", "info");
   };
@@ -899,6 +793,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateColorRole,
         toggleColorLock,
         regenerateUnlocked,
+        respinColor,
         spinPalette,
         isSpinning,
         previousColors,

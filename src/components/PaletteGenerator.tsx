@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Lock, Unlock, Copy, Check, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Sparkles, FolderPlus, Eye, RotateCcw, RotateCw, Plus, X, Star } from "lucide-react";
-import { getLuminance, hexToRgb, getSingleColorScore, getColorName } from "../utils/colorUtils";
+import { getLuminance, hexToRgb, getColorName } from "../utils/colorUtils";
+import { getSingleColorScore } from "../utils/paletteEngine";
 import { ColorRole, HarmonyMode } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -16,6 +17,7 @@ export const PaletteGenerator: React.FC = () => {
     updateColorRole,
     toggleColorLock,
     regenerateUnlocked,
+    respinColor,
     spinPalette,
     isSpinning,
     previousColors,
@@ -70,14 +72,10 @@ export const PaletteGenerator: React.FC = () => {
     setSaveOpen(false);
   };
 
-  // Generate a totally random raw shade and apply to a specific card
+  // Re-spin one card: a new colour for that card's role, designed around
+  // every other colour currently in the palette.
   const reSpinSingleColor = (index: number) => {
-    const letters = "0123456789ABCDEF";
-    let color = "#";
-    for (let i = 0; i < 6; i++) {
-      color += letters[Math.floor(Math.random() * 16)];
-    }
-    updateColorIndex(index, color);
+    respinColor(index);
     showToast("Regenerated color slot", "info");
   };
 
@@ -105,7 +103,7 @@ export const PaletteGenerator: React.FC = () => {
     triadic: "Three perfectly balanced points spaced 120 degrees apart, producing a rich, vibrant, and multi-hue balance.",
     tetradic: "Double complementary pairs (four points at 90, 180, 270 deg) for complex schemes with rich dimensional depth.",
     split: "Base hue paired with the two colors adjacent to its complement (150 and 210 deg) for dynamic, refined contrast.",
-    random: "Unrestricted, completely randomized shades to break creative blockages and spur unexpected design moments."
+    random: "A different harmony scheme on every spin, chosen for you and built around your locked colors. Good for breaking a creative block."
   };
 
   return (
