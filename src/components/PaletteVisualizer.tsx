@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { getContrastRatio } from "../utils/colorUtils";
 import { buildPreviewTheme, PreviewTheme } from "../utils/previewTheme";
-import { Globe, LayoutDashboard, FileText, Smartphone, Briefcase, Sun, Moon, RefreshCw } from "lucide-react";
+import { Globe, LayoutDashboard, FileText, Smartphone, Briefcase, Sun, Moon, RefreshCw, Lock } from "lucide-react";
 
 /**
  * "In Action": the current palette applied to realistic layouts, live.
@@ -14,12 +14,13 @@ import { Globe, LayoutDashboard, FileText, Smartphone, Briefcase, Sun, Moon, Ref
 
 type TemplateId = "website" | "dashboard" | "report" | "mobile" | "brand";
 
-const TEMPLATES: { id: TemplateId; label: string; icon: React.ElementType }[] = [
-  { id: "website", label: "Website", icon: Globe },
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "report", label: "Report", icon: FileText },
-  { id: "mobile", label: "Mobile app", icon: Smartphone },
-  { id: "brand", label: "Brand kit", icon: Briefcase },
+// The website layout is free; the rest come with Pro.
+const TEMPLATES: { id: TemplateId; label: string; icon: React.ElementType; pro: boolean }[] = [
+  { id: "website", label: "Website", icon: Globe, pro: false },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, pro: true },
+  { id: "report", label: "Report", icon: FileText, pro: true },
+  { id: "mobile", label: "Mobile app", icon: Smartphone, pro: true },
+  { id: "brand", label: "Brand kit", icon: Briefcase, pro: true },
 ];
 
 const display = "'Space Grotesk', ui-sans-serif, system-ui, sans-serif";
@@ -496,8 +497,20 @@ const RENDER: Record<TemplateId, React.FC<TProps>> = {
 const grade = (ratio: number) => (ratio >= 7 ? "AAA" : ratio >= 4.5 ? "AA" : ratio >= 3 ? "Large text only" : "Too low");
 
 export const PaletteVisualizer: React.FC = () => {
-  const { currentColors, spinPalette } = useApp();
-  const [template, setTemplate] = useState<TemplateId>("website");
+  const { currentColors, spinPalette, userSubscription, setShowUpgradeModal, showToast } = useApp();
+  const isPro = userSubscription.tier !== "free";
+  const [chosen, setTemplate] = useState<TemplateId>("website");
+  // If Pro lapses while a Pro layout is open, fall back to the free one.
+  const template: TemplateId = isPro || !TEMPLATES.find((x) => x.id === chosen)?.pro ? chosen : "website";
+
+  const pickTemplate = (id: TemplateId, pro: boolean) => {
+    if (pro && !isPro) {
+      showToast("That layout comes with Pro. The Website layout is free.", "info");
+      setShowUpgradeModal(true);
+      return;
+    }
+    setTemplate(id);
+  };
   const [dark, setDark] = useState(false);
 
   const theme = useMemo(() => buildPreviewTheme(currentColors, dark), [currentColors, dark]);
@@ -525,10 +538,19 @@ export const PaletteVisualizer: React.FC = () => {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Preview layout">
-          {TEMPLATES.map(({ id, label, icon: Icon }) => (
-            <button key={id} type="button" role="tab" aria-selected={template === id} onClick={() => setTemplate(id)} className={tabClass(template === id)}>
+          {TEMPLATES.map(({ id, label, icon: Icon, pro }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={template === id}
+              onClick={() => pickTemplate(id, pro)}
+              title={pro && !isPro ? `${label} layout: Pro` : `${label} layout`}
+              className={tabClass(template === id)}
+            >
               <Icon className="w-3.5 h-3.5" />
               <span>{label}</span>
+              {pro && !isPro && <Lock className="w-3 h-3 opacity-60" />}
             </button>
           ))}
         </div>

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
-import { Lock, Unlock, Copy, Check, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Sparkles, FolderPlus, Eye, RotateCcw, RotateCw, Plus, X, Star, Sun, Moon } from "lucide-react";
+import { Lock, Unlock, Copy, Check, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Sparkles, FolderPlus, Eye, RotateCcw, RotateCw, Plus, X, Star, Sun, Moon, Download } from "lucide-react";
 import { getLuminance, hexToRgb, getColorName } from "../utils/colorUtils";
 import { getSingleColorScore } from "../utils/paletteEngine";
+import { ExportModal } from "./ExportModal";
 import { ColorRole, HarmonyMode } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -35,6 +36,7 @@ export const PaletteGenerator: React.FC = () => {
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [paletteName, setPaletteName] = useState("");
 
   // Backdrop behind the colour cards. Colours read differently on light and
@@ -595,6 +597,16 @@ export const PaletteGenerator: React.FC = () => {
               <span className="hidden sm:inline">Save Palette</span>
             </button>
 
+            {/* Export: CSS, Tailwind, tokens, Claude */}
+            <button
+              onClick={() => setExportOpen(true)}
+              className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+              title="Export this palette as CSS, Tailwind, design tokens or a Claude brief"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-400" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+
             {/* Quick Turn Pro Trigger */}
             {userSubscription.tier === "free" && (
               <button
@@ -621,6 +633,8 @@ export const PaletteGenerator: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
 
       {/* Save Palette Modal/Inline Backdrop */}
       <AnimatePresence>
