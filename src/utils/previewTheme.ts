@@ -30,6 +30,10 @@ export interface PreviewTheme {
   series: string[];
   /** Picks readable text for any fill. */
   on: (fill: string) => string;
+  /** Every palette colour with the job it has in the preview, in palette order. */
+  usage: { hex: string; job: string }[];
+  /** Colours the preview needed but the palette did not supply. */
+  derived: { hex: string; job: string }[];
 }
 
 const isNeutral = (c: ColorItem) => c.role === "neutral-light" || c.role === "neutral-dark";
@@ -85,7 +89,30 @@ export function buildPreviewTheme(colors: ColorItem[], dark: boolean): PreviewTh
     step++;
   }
 
+  // What each palette colour is doing, so nothing in the palette is a mystery.
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const usage = colors.map((c) => {
+    let job = "Charts and artwork";
+    if (same(c.hex, bg)) job = "Page background";
+    else if (same(c.hex, ink)) job = "Text";
+    else if (same(c.hex, primary)) job = "Brand and main buttons";
+    else if (same(c.hex, accent)) job = "Highlights";
+    else if (same(c.hex, secondary)) job = "Supporting areas";
+    else if (same(c.hex, surface)) job = "Cards and panels";
+    else if (same(c.hex, (dark ? lights : darks)[1]?.hex ?? "")) job = dark ? "Cards in the light theme" : "Cards in the dark theme";
+    else if (isNeutral(c)) job = "Spare neutral, not shown here";
+    return { hex: c.hex, job };
+  });
+  const inPalette = (hex: string) => colors.some((c) => same(c.hex, hex));
+  const derived = [
+    { hex: bg, job: "Page background" },
+    { hex: ink, job: "Text" },
+    { hex: secondary, job: "Supporting areas" },
+  ].filter((d) => !inPalette(d.hex));
+
   return {
+    usage,
+    derived,
     dark,
     bg,
     surface,

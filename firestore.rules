@@ -37,7 +37,7 @@ service cloud.firestore {
       return data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid
         && data.name is string && data.name.size() > 0 && data.name.size() <= 64
         && data.harmonyMode is string && data.harmonyMode.size() <= 32
-        && data.colors is list && data.colors.size() >= 3 && data.colors.size() <= 10;
+        && data.colors is list && data.colors.size() >= 2 && data.colors.size() <= 10;
     }
 
     // Enforce schema validation for a user subscription profile

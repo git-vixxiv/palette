@@ -388,11 +388,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // Remove column strips element from index down to minimum of 3
+  // Remove column strips element from index down to minimum of 2
   const removeColumn = (index: number) => {
     setColors((prev) => {
-      if (prev.length <= 3) {
-        showToast("At least 3 colors required on custom palette", "error");
+      if (prev.length <= 2) {
+        showToast("A palette needs at least 2 colors", "error");
         return prev;
       }
       const updated = prev.filter((_, idx) => idx !== index);

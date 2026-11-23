@@ -189,7 +189,7 @@ export const PaletteGenerator: React.FC = () => {
       {/* Dynamic Flex Palette Board - Responsive dual grid-to-flex layout */}
       <div className={`w-full max-w-7xl grid ${
         currentColors.length <= 4 
-          ? currentColors.length === 3 ? "grid-cols-3" : "grid-cols-4"
+          ? currentColors.length === 2 ? "grid-cols-2" : currentColors.length === 3 ? "grid-cols-3" : "grid-cols-4"
           : currentColors.length <= 6 ? "grid-cols-3" : currentColors.length <= 8 ? "grid-cols-4" : "grid-cols-5"
       } auto-rows-fr sm:flex sm:flex-row gap-2 sm:gap-4 ${
         currentColors.length <= 4 ? "h-[210px]" : "h-[428px]"
@@ -224,7 +224,7 @@ export const PaletteGenerator: React.FC = () => {
                 <div className="flex justify-between items-center w-full">
                   {/* Far Left: X Icon (with word 'remove' beneath it on desktop) */}
                   <div className="flex-1 flex justify-start">
-                    {currentColors.length > 3 ? (
+                    {currentColors.length > 2 ? (
                       <button
                         onClick={() => removeColumn(idx)}
                         className={`flex flex-col items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${

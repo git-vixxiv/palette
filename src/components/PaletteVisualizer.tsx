@@ -94,6 +94,9 @@ const Website: React.FC<TProps> = ({ t }) => (
         <div style={{ position: "absolute", right: "15em", top: 0, width: "13em", height: "13em", borderRadius: "50%", background: t.accent }} />
         <div style={{ position: "absolute", right: "2.5em", top: "11em", width: "14em", height: "14em", borderRadius: "14em 14em 0 14em", background: t.secondary }} />
         <div style={{ position: "absolute", right: "18.5em", top: "15em", width: "8em", height: "8em", borderRadius: "1.2em", background: t.series[3] }} />
+        {t.series[4] && <div style={{ position: "absolute", right: "25em", top: "9.5em", width: "4.6em", height: "4.6em", borderRadius: "50%", background: t.series[4] }} />}
+        {t.series[5] && <div style={{ position: "absolute", right: "0.5em", top: "22em", width: "5.5em", height: "3em", borderRadius: "1.5em", background: t.series[5] }} />}
+        {t.series[6] && <div style={{ position: "absolute", right: "27.5em", top: "20em", width: "3em", height: "3em", borderRadius: "0.6em", background: t.series[6], transform: "rotate(18deg)" }} />}
         <div style={{ position: "absolute", right: "3em", top: "3em", width: "11em", padding: "1em", borderRadius: "0.9em", background: t.bg, color: t.ink, boxShadow: "0 0.8em 2em rgba(0,0,0,0.18)" }}>
           <div style={{ fontSize: "0.72em", color: t.muted }}>This month</div>
           <div style={{ fontFamily: display, fontWeight: 700, fontSize: "1.6em" }}>+38.2%</div>
@@ -110,7 +113,7 @@ const Website: React.FC<TProps> = ({ t }) => (
       {["Shared libraries", "Live handoff", "Brand guardrails"].map((title, i) => (
         <div key={title} style={col({ gap: "0.5em", padding: "1.1em 1.2em", borderRadius: "0.9em", background: t.surface, border: `0.08em solid ${t.line}` })}>
           <div style={row({ gap: "0.7em" })}>
-            <span style={{ width: "1.9em", height: "1.9em", borderRadius: "0.5em", background: [t.primary, t.secondary, t.accent][i] }} />
+            <span style={{ width: "1.9em", height: "1.9em", borderRadius: "0.5em", background: t.series[(i + Math.max(0, t.series.length - 3)) % t.series.length] }} />
             <span style={{ fontWeight: 700 }}>{title}</span>
           </div>
           <span style={{ fontSize: "0.82em", lineHeight: 1.45, color: t.muted }}>One source of truth for every team, updated the moment it changes.</span>
@@ -126,7 +129,12 @@ const Dashboard: React.FC<TProps> = ({ t }) => {
   const side = t.dark ? t.surface : t.ink;
   const onSide = t.on(side);
   const bars = [52, 61, 47, 70, 66, 78, 59, 84, 73, 92, 81, 96];
-  const donut = [44, 27, 18, 11];
+  // One segment per chart colour the palette offers, so larger palettes show every colour.
+  const plans = ["Team", "Studio", "Solo", "Legacy", "Partner", "Edu", "Trial"].slice(0, Math.min(7, t.series.length));
+  const shares = [44, 27, 18, 11, 9, 7, 5].slice(0, plans.length);
+  const shareTotal = shares.reduce((a, b) => a + b, 0);
+  const donut = shares.map((v) => Math.round((v / shareTotal) * 100));
+  donut[0] += 100 - donut.reduce((a, b) => a + b, 0);
   let offset = 0;
   const card: React.CSSProperties = { background: t.surface, border: `0.08em solid ${t.line}`, borderRadius: "0.9em", padding: "1.1em 1.2em" };
   return (
@@ -190,7 +198,7 @@ const Dashboard: React.FC<TProps> = ({ t }) => {
             <div style={row({ flex: 1, alignItems: "flex-end", gap: "0.7em", minHeight: "9em", borderBottom: `0.08em solid ${t.line}` })}>
               {bars.map((h, i) => (
                 <div key={i} style={col({ flex: 1, height: `${h}%`, borderRadius: "0.3em 0.3em 0 0", overflow: "hidden" })}>
-                  <div style={{ flex: 0.32, background: i === 9 ? t.accent : t.secondary }} />
+                  <div style={{ flex: 0.32, background: i === 9 ? t.accent : t.series.length > 4 && i % 3 === 1 ? t.series[3 + (i % (t.series.length - 3))] : t.secondary }} />
                   <div style={{ flex: 0.68, background: t.primary }} />
                 </div>
               ))}
@@ -216,7 +224,7 @@ const Dashboard: React.FC<TProps> = ({ t }) => {
               <text x="21" y="25" textAnchor="middle" fontSize="2.6" fill={t.muted}>total</text>
             </svg>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.35em 1em", fontSize: "0.75em", width: "100%" }}>
-              {["Team", "Studio", "Solo", "Legacy"].map((name, i) => (
+              {plans.map((name, i) => (
                 <span key={name} style={row({ gap: "0.45em" })}>
                   <i style={{ width: "0.7em", height: "0.7em", borderRadius: "50%", background: t.series[i] }} />
                   {name}
@@ -283,20 +291,26 @@ const Report: React.FC<TProps> = ({ t }) => {
         </div>
         <div style={col({ gap: "0.55em", marginTop: "auto" })}>
           <b style={{ fontSize: "0.82em" }}>Participants by program</b>
-          {[
-            ["Foundations", 92],
-            ["Mentorship", 71],
-            ["Field labs", 54],
-            ["Fellowships", 33],
-          ].map(([name, v], i) => (
+          {(
+            [
+              ["Foundations", 92],
+              ["Mentorship", 71],
+              ["Field labs", 54],
+              ["Fellowships", 33],
+              ["Residencies", 24],
+              ["Open days", 17],
+            ] as [string, number][]
+          )
+            .slice(0, Math.max(4, Math.min(6, t.series.length)))
+            .map(([name, v], i) => (
             <div key={name as string} style={row({ gap: "0.8em", fontSize: "0.72em" })}>
               <span style={{ width: "6.5em", color: t.muted }}>{name}</span>
               <span style={{ flex: 1, height: "0.9em", borderRadius: "0.45em", background: t.surface, overflow: "hidden" }}>
-                <span style={{ display: "block", width: `${v}%`, height: "100%", borderRadius: "0.45em", background: t.series[i] }} />
+                <span style={{ display: "block", width: `${v}%`, height: "100%", borderRadius: "0.45em", background: t.series[i % t.series.length] }} />
               </span>
               <span style={{ width: "2.2em", textAlign: "right", fontWeight: 700 }}>{v}k</span>
             </div>
-          ))}
+            ))}
         </div>
       </div>
     </div>
@@ -377,7 +391,7 @@ const Mobile: React.FC<TProps> = ({ t }) => (
         <div style={{ fontFamily: display, fontWeight: 700, fontSize: "1.55em", lineHeight: 1.1 }}>Color systems for product teams</div>
         <div style={{ fontSize: "0.78em", lineHeight: 1.5, color: t.muted }}>Build a palette that holds up across marketing, product and print, with roles your whole team can follow.</div>
         <div style={row({ gap: "0.6em", marginTop: "0.2em" })}>
-          {[t.primary, t.secondary, t.accent].map((c, i) => (
+          {t.series.slice(0, 5).map((c, i) => (
             <span key={i} style={{ width: "2.2em", height: "2.2em", borderRadius: "50%", background: c, border: `0.18em solid ${t.bg}`, marginLeft: i ? "-1em" : 0 }} />
           ))}
           <span style={{ fontSize: "0.72em", color: t.muted }}>214 enrolled</span>
@@ -541,6 +555,28 @@ export const PaletteVisualizer: React.FC = () => {
       <div className="w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-white" style={{ containerType: "inline-size" } as React.CSSProperties}>
         <div style={{ fontSize: "1.25cqw", width: "80em", height: "50em", lineHeight: 1.3, fontFamily: "ui-sans-serif, system-ui, sans-serif", overflow: "hidden" }} aria-label={`${template} preview using the current palette`}>
           <Active t={theme} />
+        </div>
+      </div>
+
+      {/* Where every colour in the palette is being used */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3">
+        <p className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-2">
+          How your {currentColors.length} colors are used
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {theme.usage.map((u, i) => (
+            <span key={`${u.hex}-${i}`} className="flex items-center gap-2 border border-slate-200 rounded-md pl-1 pr-2.5 py-1">
+              <span className="w-5 h-5 rounded border border-black/10 shrink-0" style={{ backgroundColor: u.hex }} />
+              <span className="text-[11px] font-mono font-bold text-slate-700 uppercase">{u.hex}</span>
+              <span className="text-[11px] font-sans text-slate-500">{u.job}</span>
+            </span>
+          ))}
+          {theme.derived.map((d) => (
+            <span key={`derived-${d.job}`} className="flex items-center gap-2 border border-dashed border-slate-300 rounded-md pl-1 pr-2.5 py-1" title="Your palette has no color for this job, so the preview derived one from your colors">
+              <span className="w-5 h-5 rounded border border-black/10 shrink-0" style={{ backgroundColor: d.hex }} />
+              <span className="text-[11px] font-sans text-slate-500">{d.job} (derived, not in your palette)</span>
+            </span>
+          ))}
         </div>
       </div>
 
