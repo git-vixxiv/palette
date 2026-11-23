@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { AppProvider, useApp } from "./context/AppContext";
 import { Header } from "./components/Header";
 import { PaletteGenerator } from "./components/PaletteGenerator";
+import { PaletteVisualizer } from "./components/PaletteVisualizer";
 import { ContrastMatrix } from "./components/ContrastMatrix";
 import { ScoringPanel } from "./components/ScoringPanel";
 import { CabinetPanel } from "./components/CabinetPanel";
@@ -64,6 +65,9 @@ function MainWorkbenchContent() {
 
         {/* 1. Generator Block */}
         <PaletteGenerator />
+
+        {/* 1b. The palette applied to real layouts */}
+        <PaletteVisualizer />
 
         {/* 2. Analytical Score Card */}
         <div className="mt-4">

@@ -34,6 +34,7 @@ export const Header: React.FC = () => {
       {/* User Actions */}
       <div className="flex items-center gap-6">
         <nav className="hidden lg:flex items-center gap-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <a href="#visualize" className="hover:text-[#2589BD] transition-colors">In Action</a>
           <a href="#scoring-analytics" className="hover:text-[#2589BD] transition-colors">Theory & Analytics</a>
           <a href="#accessibility-analyzer" className="hover:text-[#2589BD] transition-colors">Contrast Matrix</a>
           <a href="#saved-cabinet" className="hover:text-[#2589BD] transition-colors">Vault Cabinet</a>
