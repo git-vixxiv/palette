@@ -11,7 +11,7 @@
  */
 
 import { ColorItem, getContrastRatio } from "./colorUtils";
-import { hexToOklch, oklchToHex } from "./paletteEngine";
+import { hexToOklch, oklchToHex, resolveRoles } from "./paletteEngine";
 
 export interface PreviewTheme {
   dark: boolean;
@@ -36,9 +36,11 @@ export interface PreviewTheme {
   derived: { hex: string; job: string }[];
 }
 
-const isNeutral = (c: ColorItem) => c.role === "neutral-light" || c.role === "neutral-dark";
+const isNeutral = (c: { role: string }) => c.role === "neutral-light" || c.role === "neutral-dark";
 
-export function buildPreviewTheme(colors: ColorItem[], dark: boolean): PreviewTheme {
+export function buildPreviewTheme(input: ColorItem[], dark: boolean): PreviewTheme {
+  // Colours left on "general" are used for whatever their colour suits.
+  const colors = resolveRoles(input);
   const ok = (hex: string) => hexToOklch(hex);
   const lights = colors.filter((c) => c.role === "neutral-light").sort((a, b) => ok(b.hex).L - ok(a.hex).L);
   const darks = colors.filter((c) => c.role === "neutral-dark").sort((a, b) => ok(a.hex).L - ok(b.hex).L);

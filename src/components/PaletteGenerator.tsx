@@ -369,10 +369,11 @@ export const PaletteGenerator: React.FC = () => {
                       borderColor: isDark ? "rgba(244,244,244,0.55)" : "rgba(26,26,26,0.5)",
                       backgroundColor: isDark ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.45)",
                     }}
-                    title="Set what this color is for. Spins build the color to suit its role."
+                    title="Optional: say what this color is for and spins will build it to suit. Leave on General to let palette decide."
                   >
                     {(
                       [
+                        ["general", "General"],
                         ["primary", "Primary"],
                         ["secondary", "Secondary"],
                         ["accent", "Accent"],

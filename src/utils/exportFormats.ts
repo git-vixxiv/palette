@@ -4,7 +4,8 @@
  * Design. Everything is generated in the browser; nothing is uploaded.
  */
 
-import { ColorItem, ColorRole, HarmonyMode, getContrastRatio } from "./colorUtils";
+import { ColorItem, AssignedRole as ColorRole, HarmonyMode, getContrastRatio } from "./colorUtils";
+import { resolveRoles } from "./paletteEngine";
 import { buildPreviewTheme } from "./previewTheme";
 
 export interface NamedColor {
@@ -39,8 +40,10 @@ const PURPOSE: Record<ColorRole, string> = {
 };
 
 /** Give every colour a stable token name from its role (primary, secondary-2, ...). */
-export function nameColors(colors: ColorItem[]): NamedColor[] {
-  const theme = buildPreviewTheme(colors, false);
+export function nameColors(input: ColorItem[]): NamedColor[] {
+  // Colours left on "general" are named by the role their colour suits.
+  const colors = resolveRoles(input);
+  const theme = buildPreviewTheme(input, false);
   const seen: Partial<Record<ColorRole, number>> = {};
   return colors.map((c) => {
     const n = (seen[c.role] = (seen[c.role] ?? 0) + 1);

@@ -116,10 +116,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Default color palette setup initialized with brand colors: #1a1a1a, #d1c69e, #2589BD, #f4f4f4
   const [currentColors, setColorsState] = useState<ColorItem[]>([
-    { hex: "#2589BD", role: "primary", locked: false },
-    { hex: "#d1c69e", role: "secondary", locked: false },
-    { hex: "#f4f4f4", role: "neutral-light", locked: false },
-    { hex: "#1a1a1a", role: "neutral-dark", locked: false },
+    { hex: "#2589BD", role: "general", locked: false },
+    { hex: "#d1c69e", role: "general", locked: false },
+    { hex: "#f4f4f4", role: "general", locked: false },
+    { hex: "#1a1a1a", role: "general", locked: false },
   ]);
   const [harmonyMode, setHarmonyState] = useState<HarmonyMode>("analogous");
 
@@ -367,11 +367,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prev;
       }
       
-      // Select appropriate role recommendation
-      const roles: ColorRole[] = ["primary", "secondary", "accent", "neutral-light", "neutral-dark"];
-      const missingRoles = roles.filter(r => !prev.some(col => col.role === r));
-      const chosenRole = missingRoles.length > 0 ? missingRoles[0] : "secondary";
-      
+      // New colours start on General: the engine works out what the palette
+      // still lacks. The user can pick a role afterwards to steer it.
+      const chosenRole: ColorRole = "general";
+
       // Generate the new colour for its role, treating every existing colour
       // as fixed context so it is designed to sit with all of them.
       const draft: ColorItem[] = [...prev, { hex: "#808080", role: chosenRole, locked: false }];

@@ -587,7 +587,7 @@ const Mobile: React.FC<TProps> = ({ t }) => (
     <Phone t={t}>
       <div style={{ padding: "0.8em 1.3em 0" }}>
         <div style={{ fontSize: "0.78em", color: t.muted }}>Good morning</div>
-        <div style={{ fontFamily: display, fontWeight: 700, fontSize: "1.5em" }}>Amara Okafor</div>
+        <div style={{ fontFamily: display, fontWeight: 700, fontSize: "1.5em" }}>Chili Vanilli</div>
       </div>
       <div style={{ margin: "1em 1.3em 0", padding: "1.2em", borderRadius: "1.2em", background: t.primary, color: t.onPrimary, position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", right: "-2em", top: "-2em", width: "7em", height: "7em", borderRadius: "50%", background: t.secondary, opacity: 0.9 }} />
@@ -678,7 +678,7 @@ const Brand: React.FC<TProps> = ({ t }) => {
         <div style={{ width: "27em", height: "15.5em", borderRadius: "0.8em", background: t.bg, boxShadow: shadow, padding: "1.8em", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "0.9em", background: t.accent }} />
           <div style={{ paddingLeft: "1em" }}>
-            <div style={{ fontFamily: display, fontWeight: 700, fontSize: "1.6em" }}>Amara Okafor</div>
+            <div style={{ fontFamily: display, fontWeight: 700, fontSize: "1.6em" }}>Chili Vanilli</div>
             <div style={{ fontSize: "0.82em", fontWeight: 700, color: t.dark ? t.ink : t.primary, letterSpacing: "0.1em", marginTop: "0.2em" }}>ART DIRECTOR</div>
             <div style={{ width: "3em", height: "0.25em", background: t.secondary, margin: "1.3em 0" }} />
             <div style={{ fontSize: "0.82em", lineHeight: 1.7, color: t.muted }}>

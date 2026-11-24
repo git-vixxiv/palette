@@ -37,7 +37,15 @@
  * constants. They are all in one place (see WEIGHTS) so they can be tuned.
  */
 
-import { ColorItem, ColorRole, HarmonyMode, hexToRgb, rgbToHex, getContrastRatio } from "./colorUtils";
+import {
+  ColorItem,
+  AssignedRole as ColorRole,
+  ColorRole as AnyRole,
+  HarmonyMode,
+  hexToRgb,
+  rgbToHex,
+  getContrastRatio,
+} from "./colorUtils";
 
 /* ------------------------------------------------------------------ *
  * OKLCH conversions and sRGB gamut handling
@@ -890,6 +898,61 @@ export interface GenerateOptions {
   seed?: number;
 }
 
+/** Well-rounded role mixes for a palette of a given size, with weights. */
+const P: ColorRole = "primary";
+const S: ColorRole = "secondary";
+const A: ColorRole = "accent";
+const LT: ColorRole = "neutral-light";
+const DK: ColorRole = "neutral-dark";
+const MIXES: Record<number, [ColorRole[], number][]> = {
+  2: [[[P, DK], 0.3], [[P, LT], 0.3], [[A, DK], 0.2], [[P, A], 0.2]],
+  3: [[[P, A, DK], 0.3], [[P, S, LT], 0.25], [[P, A, LT], 0.25], [[P, S, DK], 0.2]],
+  4: [[[P, S, LT, DK], 0.3], [[P, A, LT, DK], 0.3], [[P, S, A, DK], 0.2], [[P, S, A, LT], 0.2]],
+  5: [[[P, S, A, LT, DK], 0.7], [[P, S, S, A, DK], 0.15], [[P, S, S, A, LT], 0.15]],
+};
+// Beyond five, add colour rather than more near-whites and near-blacks.
+const EXTRAS: ColorRole[] = [S, A, S, P, S];
+const PADDING: ColorRole[] = [S, A, LT, DK];
+
+/**
+ * Decide a concrete role for every slot for one spin. Roles the user chose
+ * are kept. A locked "general" colour is read for what it is. Unlocked
+ * "general" slots are given whatever a well-rounded palette of this size
+ * still lacks, so "just give me colours that work" yields a lead colour,
+ * support, and usually a light or dark, without the user ranking anything.
+ */
+function planRoles(slots: ColorItem[], fixedFlags: boolean[], rng: Rng): ColorRole[] {
+  const n = slots.length;
+  const plan: (ColorRole | null)[] = slots.map((s) => (s.role === "general" ? null : s.role));
+
+  // Locked general colours: infer from the colour, around the explicit roles.
+  const lockedOpen = slots.map((s, i) => (s.role === "general" && fixedFlags[i] ? i : -1)).filter((i) => i >= 0);
+  if (lockedOpen.length) {
+    const taken = new Set(plan.filter((r): r is ColorRole => r !== null));
+    const inferred = suggestRoles(lockedOpen.map((i) => slots[i].hex), taken);
+    lockedOpen.forEach((i, k) => (plan[i] = inferred[k]));
+  }
+
+  const free = plan.map((r, i) => (r === null ? i : -1)).filter((i) => i >= 0);
+  if (!free.length) return plan as ColorRole[];
+
+  const options = MIXES[Math.min(n, 5)] ?? MIXES[5];
+  const target = [...weighted(rng, options.map((o) => o[0]), options.map((o) => o[1]))];
+  for (let i = 5; i < n; i++) target.push(EXTRAS[(i - 5) % EXTRAS.length]);
+
+  // What the target mix still needs once the decided roles are counted.
+  const have = plan.filter((r): r is ColorRole => r !== null);
+  const need: ColorRole[] = [];
+  for (const role of target) {
+    const at = have.indexOf(role);
+    if (at >= 0) have.splice(at, 1);
+    else need.push(role);
+  }
+  for (let k = 0; need.length < free.length; k++) need.push(PADDING[k % PADDING.length]);
+  free.forEach((i, k) => (plan[i] = need[k]));
+  return plan as ColorRole[];
+}
+
 /**
  * Produce a hex colour for every slot. Fixed slots are returned unchanged;
  * the rest are generated to suit their role and the fixed colours around them.
@@ -898,24 +961,26 @@ export function generatePalette(slots: ColorItem[], mode: HarmonyMode, options: 
   const fixedFlags = options.fixed ?? slots.map((s) => s.locked);
   if (fixedFlags.every(Boolean)) return slots.map((s) => s.hex);
   const rng = options.seed === undefined ? Math.random : mulberry32(options.seed);
-  const internal: Slot[] = slots.map((s, i) => ({
-    role: s.role,
-    fixed: fixedFlags[i] ? hexToOklch(s.hex) : null,
-  }));
 
-  // The scheme, key hue and tone are decided once per spin, which is what
-  // keeps successive spins varied. The search then finds the best execution
-  // of that direction. A direction that cannot produce a strong result (some
-  // lock combinations fight certain schemes) is replaced, up to twice.
+  // The role mix, scheme, key hue and tone are decided once per spin, which
+  // is what keeps successive spins varied. The search then finds the best
+  // execution of that direction. A direction that cannot produce a strong
+  // result (some lock combinations fight certain schemes) is replaced, up to
+  // twice.
   const count = options.candidates ?? 70;
   let scored: { hexes: string[]; score: number }[] = [];
   for (let attempt = 0; attempt < 3; attempt++) {
+    const roles = planRoles(slots, fixedFlags, rng);
+    const internal: Slot[] = slots.map((s, i) => ({
+      role: roles[i],
+      fixed: fixedFlags[i] ? hexToOklch(s.hex) : null,
+    }));
     const concept = makeConcept(internal, mode, rng);
     const batch: { hexes: string[]; score: number }[] = [];
     for (let k = 0; k < count; k++) {
       const candidate = buildCandidate(internal, concept, rng);
       const hexes = candidate.map((c, i) => (fixedFlags[i] ? slots[i].hex : oklchToHex(c.L, c.C, c.h)));
-      const score = analyze(hexes.map((hex, i) => ({ hex, role: slots[i].role })), mode, true).total;
+      const score = analyze(hexes.map((hex, i) => ({ hex, role: roles[i] })), mode, true).total;
       batch.push({ hexes, score });
     }
     batch.sort((a, b) => b.score - a.score);
@@ -926,7 +991,18 @@ export function generatePalette(slots: ColorItem[], mode: HarmonyMode, options: 
   // Choose among the best few so repeated spins stay varied.
   const top = scored.slice(0, 5);
   const floor = top[top.length - 1].score;
-  return weighted(rng, top, top.map((t) => 0.02 + (t.score - floor))).hexes;
+  const hexes = [...weighted(rng, top, top.map((t) => 0.02 + (t.score - floor))).hexes];
+
+  // Colours with no role have no meaningful position, so lay the generated
+  // ones out as a light-to-dark (or dark-to-light) run, which reads as
+  // designed. Slots with a chosen role, and locked colours, stay put.
+  const loose = slots.map((s, i) => (s.role === "general" && !fixedFlags[i] ? i : -1)).filter((i) => i >= 0);
+  if (loose.length > 1) {
+    const direction = rng() < 0.5 ? 1 : -1;
+    const ordered = loose.map((i) => hexes[i]).sort((a, b) => direction * (hexToOklch(a).L - hexToOklch(b).L));
+    loose.forEach((i, k) => (hexes[i] = ordered[k]));
+  }
+  return hexes;
 }
 
 /* ------------------------------------------------------------------ *
@@ -950,9 +1026,10 @@ export function scorePalette(
   breakdown: { roles: number; contrast: number; harmony: number };
   tips: string[];
 } {
-  const a = analyze(colors, harmonyMode);
+  const resolved = resolveRoles(colors);
+  const a = analyze(resolved, harmonyMode);
   const tips: { weight: number; text: string }[] = [];
-  const has = (role: ColorRole) => colors.some((c) => c.role === role);
+  const has = (role: ColorRole) => resolved.some((c) => c.role === role);
   const hasNeutral = has("neutral-light") || has("neutral-dark");
 
   const presence = (has("primary") ? 0.4 : 0) + (hasNeutral ? 0.3 : 0) + (has("accent") || has("secondary") ? 0.3 : 0);
@@ -1006,34 +1083,60 @@ export function scorePalette(
  * becomes the primary, the most vivid remaining colour the accent, and the
  * rest secondaries. Works for any number of colours.
  */
-export function suggestRoles(hexes: string[]): ColorRole[] {
+export function suggestRoles(hexes: string[], taken: ReadonlySet<ColorRole> = new Set()): ColorRole[] {
   const sw = hexes.map((hex) => toSwatch(hex, "secondary"));
   const roles: (ColorRole | null)[] = hexes.map(() => null);
   const open = () => sw.map((_, i) => i).filter((i) => roles[i] === null);
 
-  // Neutrals: always claim the single lightest / darkest if plausible, then
-  // any others that are unmistakably near-white or near-black.
+  // Neutrals: claim the single lightest / darkest if plausible (unless that
+  // role is already filled elsewhere), then any others that are unmistakably
+  // near-white or near-black.
   const lightest = open().sort((a, b) => sw[b].L - sw[a].L)[0];
-  if (lightest !== undefined && sw[lightest].L >= 0.85 && sw[lightest].C < 0.08) roles[lightest] = "neutral-light";
+  if (!taken.has("neutral-light") && lightest !== undefined && sw[lightest].L >= 0.85 && sw[lightest].C < 0.08) roles[lightest] = "neutral-light";
   const darkest = open().sort((a, b) => sw[a].L - sw[b].L)[0];
-  if (darkest !== undefined && sw[darkest].L <= 0.36 && sw[darkest].C < 0.1) roles[darkest] = "neutral-dark";
+  if (!taken.has("neutral-dark") && darkest !== undefined && sw[darkest].L <= 0.36 && sw[darkest].C < 0.1) roles[darkest] = "neutral-dark";
   for (const i of open()) {
     if (sw[i].L >= 0.9 && sw[i].C < 0.045) roles[i] = "neutral-light";
     else if (sw[i].L <= 0.3 && sw[i].C < 0.06) roles[i] = "neutral-dark";
   }
 
   const fitAs = (i: number, role: ColorRole) => roleFit({ ...sw[i], role });
-  const lead = open().sort((a, b) => fitAs(b, "primary") - fitAs(a, "primary"))[0];
-  if (lead !== undefined) roles[lead] = "primary";
-  const pop = open().sort((a, b) => sw[b].C * (0.5 + sw[b].rel) - sw[a].C * (0.5 + sw[a].rel))[0];
-  if (pop !== undefined && fitAs(pop, "accent") > 0.5) roles[pop] = "accent";
+  if (!taken.has("primary")) {
+    const lead = open().sort((a, b) => fitAs(b, "primary") - fitAs(a, "primary"))[0];
+    if (lead !== undefined) roles[lead] = "primary";
+  }
+  if (!taken.has("accent")) {
+    const pop = open().sort((a, b) => sw[b].C * (0.5 + sw[b].rel) - sw[a].C * (0.5 + sw[a].rel))[0];
+    if (pop !== undefined && fitAs(pop, "accent") > 0.5) roles[pop] = "accent";
+  }
 
   return roles.map((r) => r ?? "secondary");
 }
 
+/**
+ * The role to treat each colour as. A role the user chose always stands. A
+ * colour left on "general" gets the role its colour actually suits, worked
+ * out around the roles that were chosen. Scoring, previews and exports all
+ * use this, so a palette with no roles assigned still gets a page colour, a
+ * text colour and a lead colour.
+ */
+export function resolveRoles<T extends { hex: string; role: AnyRole }>(colors: T[]): (Omit<T, "role"> & { role: ColorRole })[] {
+  const open = colors.map((c, i) => (c.role === "general" ? i : -1)).filter((i) => i >= 0);
+  if (!open.length) return colors as (Omit<T, "role"> & { role: ColorRole })[];
+  const taken = new Set(colors.filter((c) => c.role !== "general").map((c) => c.role as ColorRole));
+  const inferred = suggestRoles(open.map((i) => colors[i].hex), taken);
+  return colors.map((c, i) => {
+    const at = open.indexOf(i);
+    return { ...c, role: at >= 0 ? inferred[at] : (c.role as ColorRole) };
+  });
+}
+
 /** Score for one colour in context, 45..99: role fit plus how it sits with the rest. */
 export function getSingleColorScore(color: ColorItem, allColors: ColorItem[]): number {
-  const me = toSwatch(color.hex, color.role);
+  const resolved = resolveRoles(allColors);
+  const self = allColors.indexOf(color);
+  const myRole: ColorRole = self >= 0 ? resolved[self].role : suggestRoles([color.hex])[0];
+  const me = toSwatch(color.hex, myRole);
   const fit = roleFit(me);
   let partner = 1;
   let worstClash = 0;
@@ -1044,7 +1147,7 @@ export function getSingleColorScore(color: ColorItem, allColors: ColorItem[]): n
       seenSelf = true;
       continue;
     }
-    const o = toSwatch(other.hex, other.role);
+    const o = toSwatch(other.hex, resolved[allColors.indexOf(other)]?.role ?? "secondary");
     partner = Math.max(partner, getContrastRatio(color.hex, other.hex));
     nearest = Math.min(nearest, deltaE(me, o));
     if (me.C >= CHROMATIC && o.C >= CHROMATIC) worstClash = Math.max(worstClash, clash(me, o));

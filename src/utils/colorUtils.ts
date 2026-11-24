@@ -14,7 +14,14 @@ export interface HSL {
   l: number; // 0-100
 }
 
-export type ColorRole = "primary" | "secondary" | "accent" | "neutral-light" | "neutral-dark";
+/** A role the user has chosen for a colour. */
+export type AssignedRole = "primary" | "secondary" | "accent" | "neutral-light" | "neutral-dark";
+/**
+ * "general" means the user has not said what the colour is for. The engine
+ * then decides the structure itself (see planRoles / resolveRoles in
+ * paletteEngine).
+ */
+export type ColorRole = AssignedRole | "general";
 
 export interface ColorItem {
   hex: string;
