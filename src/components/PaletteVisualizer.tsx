@@ -41,7 +41,7 @@ const Website: React.FC<TProps> = ({ t }) => (
         <span key={i} style={{ width: "0.75em", height: "0.75em", borderRadius: "50%", background: t.line }} />
       ))}
       <span style={{ marginLeft: "1.2em", flex: 1, maxWidth: "30em", height: "1.4em", borderRadius: "0.7em", background: t.bg, border: `0.08em solid ${t.line}`, fontSize: "0.7em", color: t.muted, display: "flex", alignItems: "center", padding: "0 1em" }}>
-        northwind.studio
+        vixxiv.com
       </span>
     </div>
 
@@ -50,7 +50,7 @@ const Website: React.FC<TProps> = ({ t }) => (
         <span style={{ width: "1.7em", height: "1.7em", borderRadius: "0.45em", background: t.primary, display: "grid", placeItems: "center" }}>
           <span style={{ width: "0.7em", height: "0.7em", borderRadius: "50%", background: t.onPrimary }} />
         </span>
-        <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.3em" }}>Northwind</span>
+        <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.3em" }}>vixxivapps</span>
       </div>
       <div style={row({ gap: "2.2em", fontSize: "0.92em", color: t.muted })}>
         <span>Product</span>
@@ -144,7 +144,7 @@ const Dashboard: React.FC<TProps> = ({ t }) => {
       <div style={col({ width: "14em", background: side, color: onSide, padding: "1.6em 1.1em", gap: "0.35em" })}>
         <div style={row({ gap: "0.6em", marginBottom: "1.6em" })}>
           <span style={{ width: "1.7em", height: "1.7em", borderRadius: "0.45em", background: t.primary }} />
-          <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.2em" }}>Ledgerly</span>
+          <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.2em" }}>vixxivapps</span>
         </div>
         {["Overview", "Revenue", "Customers", "Invoices", "Reports", "Settings"].map((item, i) => (
           <div key={item} style={row({ gap: "0.7em", padding: "0.65em 0.8em", borderRadius: "0.5em", fontSize: "0.9em", fontWeight: i === 0 ? 700 : 500, background: i === 0 ? t.primary : "transparent", color: i === 0 ? t.onPrimary : onSide, opacity: i === 0 ? 1 : 0.72 })}>
@@ -321,7 +321,7 @@ const SaasAdmin: React.FC<TProps> = ({ t }) => {
           <span style={{ width: "3em", height: "3em", borderRadius: "50%", background: onSide, position: "relative", overflow: "hidden" }}>
             <span style={{ position: "absolute", left: "-0.4em", top: "1.25em", width: "4em", height: "0.5em", background: side, transform: "rotate(-45deg)" }} />
           </span>
-          <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.35em" }}>Brightwell</span>
+          <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.35em" }}>vixxivapps</span>
         </div>
         {["Overview", "Transactions", "Customers", "Reports", "Settings", "Developer"].map((item, i) => (
           <div key={item} style={row({ gap: "0.8em", padding: "0.6em 0.5em", borderRadius: "0.5em", fontSize: "0.86em", fontWeight: i === 0 ? 700 : 500, opacity: i === 0 ? 1 : 0.75, background: i === 0 ? t.primary : "transparent", color: i === 0 ? t.onPrimary : onSide })}>
@@ -499,7 +499,7 @@ const Report: React.FC<TProps> = ({ t }) => {
         <div style={{ position: "absolute", right: "-6em", bottom: "-6em", width: "24em", height: "24em", borderRadius: "50%", background: t.secondary }} />
         <div style={{ position: "absolute", right: "7em", bottom: "9em", width: "9em", height: "9em", borderRadius: "50%", background: t.accent }} />
         <div style={{ position: "relative" }}>
-          <div style={{ fontSize: "0.8em", fontWeight: 700, letterSpacing: "0.18em" }}>NORTHWIND FOUNDATION</div>
+          <div style={{ fontSize: "0.8em", fontWeight: 700, letterSpacing: "0.18em" }}>vixxivapps foundation</div>
           <div style={{ width: "4em", height: "0.4em", background: t.accent, margin: "1.4em 0" }} />
           <div style={{ fontFamily: display, fontWeight: 700, fontSize: "3.6em", lineHeight: 1.02, letterSpacing: "-0.02em" }}>
             Annual
@@ -515,7 +515,7 @@ const Report: React.FC<TProps> = ({ t }) => {
       <div style={{ ...page, background: t.bg, padding: "2.6em 2.4em", ...col({ gap: "1.1em" }) }}>
         <div style={row({ justifyContent: "space-between", fontSize: "0.68em", color: t.muted, letterSpacing: "0.12em" })}>
           <span>02 · YEAR IN REVIEW</span>
-          <span>NORTHWIND</span>
+          <span>vixxivapps</span>
         </div>
         <div style={{ fontFamily: display, fontWeight: 700, fontSize: "2em", lineHeight: 1.1 }}>
           Growth that reached <span style={{ color: t.dark ? t.ink : t.primary, textDecoration: `underline ${t.accent}`, textDecorationThickness: "0.14em", textUnderlineOffset: "0.14em" }}>more people</span>
@@ -670,7 +670,7 @@ const Brand: React.FC<TProps> = ({ t }) => {
             <span style={{ width: "2.6em", height: "2.6em", borderRadius: "0.7em", background: t.onPrimary, display: "grid", placeItems: "center" }}>
               <span style={{ width: "1.1em", height: "1.1em", borderRadius: "50%", background: t.primary }} />
             </span>
-            <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.9em" }}>Northwind</span>
+            <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.9em" }}>vixxivapps</span>
           </div>
           <div style={{ position: "absolute", left: "1.8em", bottom: "1.6em", fontSize: "0.8em", letterSpacing: "0.14em", fontWeight: 600 }}>DESIGN STUDIO</div>
         </div>
@@ -684,9 +684,9 @@ const Brand: React.FC<TProps> = ({ t }) => {
             <div style={{ fontSize: "0.82em", lineHeight: 1.7, color: t.muted }}>
               +1 (512) 555 0142
               <br />
-              amara@northwind.studio
+              hello@vixxiv.com
               <br />
-              northwind.studio
+              vixxiv.com
             </div>
           </div>
         </div>

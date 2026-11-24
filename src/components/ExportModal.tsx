@@ -133,7 +133,7 @@ export const ExportModal: React.FC<Props> = ({ open, onClose }) => {
                 value={name}
                 maxLength={64}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Northwind brand"
+                placeholder="e.g. vixxivapps brand"
                 className="w-full sm:w-80 px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 focus:border-slate-900 focus:outline-hidden"
               />
             </div>
