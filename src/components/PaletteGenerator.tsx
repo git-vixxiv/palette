@@ -358,20 +358,35 @@ export const PaletteGenerator: React.FC = () => {
                   <select
                     value={color.role}
                     onChange={(e) => updateColorRole(idx, e.target.value as ColorRole)}
-                    className={`w-full text-[6px] sm:text-[8.5px] font-sans font-black uppercase tracking-wider rounded px-0.5 py-0.5 bg-transparent border cursor-pointer pr-3 sm:pr-6 appearance-none transition-all outline-hidden text-center truncate ${
-                      isDark ? "text-white hover:bg-white/10 text-slate-900 bg-slate-950" : "text-slate-900 hover:bg-black/5 text-slate-850 bg-white"
+                    className={`w-full text-[6px] sm:text-[8.5px] font-sans font-black uppercase tracking-wider rounded px-0.5 py-0.5 border cursor-pointer pr-3 sm:pr-6 appearance-none transition-all outline-hidden text-center truncate ${
+                      isDark ? "hover:bg-white/15" : "hover:bg-black/10"
                     }`}
-                    style={{ borderColor: "#1a1a1a" }}
-                    title="Click to change color role"
+                    style={{
+                      // The closed control follows the card; the open list is
+                      // styled on each option below so it is always dark text
+                      // on white, whatever the card colour.
+                      color: isDark ? "#F4F4F4" : "#1a1a1a",
+                      borderColor: isDark ? "rgba(244,244,244,0.55)" : "rgba(26,26,26,0.5)",
+                      backgroundColor: isDark ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.45)",
+                    }}
+                    title="Set what this color is for. Spins build the color to suit its role."
                   >
-                    <option value="primary">Primary</option>
-                    <option value="secondary">Secondary</option>
-                    <option value="accent">Accent</option>
-                    <option value="neutral-light">Light</option>
-                    <option value="neutral-dark">Dark</option>
+                    {(
+                      [
+                        ["primary", "Primary"],
+                        ["secondary", "Secondary"],
+                        ["accent", "Accent"],
+                        ["neutral-light", "Light"],
+                        ["neutral-dark", "Dark"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <option key={value} value={value} style={{ color: "#1a1a1a", backgroundColor: "#ffffff" }}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                   <div className="absolute right-0.5 sm:right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-85">
-                    <ChevronDown className="w-1.5 h-1.5 sm:w-3 sm:h-3" style={{ color: "#1a1a1a" }} />
+                    <ChevronDown className="w-1.5 h-1.5 sm:w-3 sm:h-3" style={{ color: isDark ? "#F4F4F4" : "#1a1a1a" }} />
                   </div>
                 </div>
 
