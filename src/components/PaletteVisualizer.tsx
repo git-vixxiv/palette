@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { getContrastRatio } from "../utils/colorUtils";
 import { buildPreviewTheme, PreviewTheme } from "../utils/previewTheme";
-import { Globe, LayoutDashboard, FileText, Smartphone, Briefcase, Sun, Moon, RefreshCw, Lock } from "lucide-react";
+import { Globe, LayoutDashboard, FileText, Smartphone, Briefcase, Sun, Moon, RefreshCw, Lock, Activity } from "lucide-react";
 
 /**
  * "In Action": the current palette applied to realistic layouts, live.
@@ -12,12 +12,13 @@ import { Globe, LayoutDashboard, FileText, Smartphone, Briefcase, Sun, Moon, Ref
  * piece. Colours come only from the theme built out of the palette's roles.
  */
 
-type TemplateId = "website" | "dashboard" | "report" | "mobile" | "brand";
+type TemplateId = "website" | "dashboard" | "admin" | "report" | "mobile" | "brand";
 
 // The website layout is free; the rest come with Pro.
 const TEMPLATES: { id: TemplateId; label: string; icon: React.ElementType; pro: boolean }[] = [
   { id: "website", label: "Website", icon: Globe, pro: false },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, pro: true },
+  { id: "admin", label: "SaaS admin", icon: Activity, pro: true },
   { id: "report", label: "Report", icon: FileText, pro: true },
   { id: "mobile", label: "Mobile app", icon: Smartphone, pro: true },
   { id: "brand", label: "Brand kit", icon: Briefcase, pro: true },
@@ -232,6 +233,254 @@ const Dashboard: React.FC<TProps> = ({ t }) => {
                   <span style={{ marginLeft: "auto", color: t.muted }}>{donut[i]}%</span>
                 </span>
               ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ----------------------------- SaaS admin ----------------------------- */
+
+// Coarse dot map of the world: '#' is land. Decorative, not geographic data.
+const WORLD = [
+  "......###....................#####......",
+  "..########..##......####.##########.....",
+  ".##########.##.....##################...",
+  "..#########........###################..",
+  "...#######.........#################....",
+  "....#####..........####.###########.....",
+  ".....###...........########..####.......",
+  "......##.....##.....#######...##........",
+  ".......###..####.....#####.....#..#.....",
+  "........#######.......####........###...",
+  "........######........###.........#####.",
+  ".........####.........##..........#####.",
+  ".........###...........#...........###..",
+  ".........##.............................",
+];
+// Regions drawn in the highlight colour: [colFrom, colTo, rowFrom, rowTo]
+const ACTIVE_REGIONS = [
+  [1, 11, 1, 6],
+  [19, 24, 1, 5],
+  [8, 14, 8, 13],
+  [34, 39, 9, 12],
+];
+
+const SaasAdmin: React.FC<TProps> = ({ t }) => {
+  const side = t.dark ? t.surface : t.ink;
+  const onSide = t.on(side);
+  const card: React.CSSProperties = { background: t.dark ? t.surface : t.bg, border: `0.08em solid ${t.line}`, borderRadius: "1em", padding: "1em 1.1em" };
+  const canvas = t.dark ? t.bg : t.surface;
+  const tiles: [string, string, string][] = [
+    ["Current MRR", "$12.4k", t.accent],
+    ["Current customers", "16,601", t.primary],
+    ["Active customers", "33%", t.dark ? t.surface : t.bg],
+    ["Churn rate", "2%", t.secondary],
+  ];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"];
+  const trend = [
+    [60, 38, 18],
+    [80, 50, 19],
+    [71, 49, 34],
+    [43, 24, 9],
+    [78, 69, 37],
+    [90, 58, 43],
+    [85, 73, 21],
+  ];
+  const trendFill = [t.line, t.secondary, t.ink];
+  const plans: [string, number, string][] = [
+    ["Basic", 12, t.ink],
+    ["Pro", 26, t.accent],
+    ["Advanced", 56, t.primary],
+    ["Enterprise", 6, t.line],
+  ];
+  let offset = 0;
+  const rows: [string, string, string, string][] = [
+    ["S. Evergreen", "PRO", "+$49", t.line],
+    ["B. Sterling", "ADVANCED", "+$99", t.primary],
+    ["O. Meadows", "BASIC", "+$19", t.secondary],
+    ["I. Whitman", "ENTERPRISE", "+$299", t.ink],
+    ["E. Frost", "BASIC", "+$19", t.secondary],
+  ];
+  const tickets: [string, string, string, string][] = [
+    ["jessica.smith@example.com", "Login issue", "OPEN", t.primary],
+    ["david.jones@example.com", "Billing inquiry", "PENDING", t.accent],
+    ["emily.wilson@example.com", "Product malfunction", "CLOSED", t.ink],
+    ["andrew.johnson@example.com", "Feature request", "OPEN", t.primary],
+  ];
+  const badge = (fill: string): React.CSSProperties => ({ fontSize: "0.55em", fontWeight: 800, letterSpacing: "0.06em", padding: "0.3em 0.6em", borderRadius: "0.35em", background: fill, color: t.on(fill) });
+  const dropdown: React.CSSProperties = { fontSize: "0.62em", padding: "0.45em 0.9em", borderRadius: "0.5em", background: t.ink, color: t.bg };
+  const title: React.CSSProperties = { fontFamily: display, fontWeight: 700, fontSize: "1.15em" };
+
+  return (
+    <div style={row({ height: "100%", alignItems: "stretch", background: canvas, color: t.ink })}>
+      <div style={col({ width: "13em", background: side, color: onSide, padding: "1.8em 1.2em 1.4em", gap: "0.2em" })}>
+        <div style={col({ alignItems: "center", gap: "0.6em", marginBottom: "1.6em" })}>
+          <span style={{ width: "3em", height: "3em", borderRadius: "50%", background: onSide, position: "relative", overflow: "hidden" }}>
+            <span style={{ position: "absolute", left: "-0.4em", top: "1.25em", width: "4em", height: "0.5em", background: side, transform: "rotate(-45deg)" }} />
+          </span>
+          <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.35em" }}>Brightwell</span>
+        </div>
+        {["Overview", "Transactions", "Customers", "Reports", "Settings", "Developer"].map((item, i) => (
+          <div key={item} style={row({ gap: "0.8em", padding: "0.6em 0.5em", borderRadius: "0.5em", fontSize: "0.86em", fontWeight: i === 0 ? 700 : 500, opacity: i === 0 ? 1 : 0.75, background: i === 0 ? t.primary : "transparent", color: i === 0 ? t.onPrimary : onSide })}>
+            <span style={{ width: "0.95em", height: "0.95em", borderRadius: i % 2 ? "50%" : "0.25em", background: "currentColor", opacity: 0.9 }} />
+            {item}
+          </div>
+        ))}
+        <div style={row({ gap: "0.8em", marginTop: "auto", padding: "0.6em 0.5em", fontSize: "0.86em", opacity: 0.75 })}>
+          <span style={{ width: "0.95em", height: "0.95em", borderRadius: "0.25em", border: "0.14em solid currentColor" }} />
+          Log out
+        </div>
+      </div>
+
+      <div style={col({ flex: 1, minWidth: 0 })}>
+        <div style={row({ justifyContent: "space-between", padding: "0.9em 1.6em", background: t.dark ? t.surface : t.bg, borderBottom: `0.08em solid ${t.line}` })}>
+          <span style={{ fontFamily: display, fontWeight: 700, fontSize: "1.6em" }}>Dashboard</span>
+          <div style={row({ gap: "1em" })}>
+            <span style={{ width: "27em", whiteSpace: "nowrap", overflow: "hidden", fontSize: "0.72em", padding: "0.7em 1.2em", borderRadius: "2em", background: t.ink, color: t.bg, opacity: 0.95 }}>Search transactions, customers, subscriptions</span>
+            <span style={{ width: "2em", height: "2em", borderRadius: "50%", background: t.secondary }} />
+          </div>
+        </div>
+
+        <div style={col({ flex: 1, minHeight: 0, padding: "1em 1.4em 1.2em", gap: "0.9em" })}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.9em" }}>
+            {tiles.map(([label, value, fill]) => (
+              <div key={label} style={{ background: fill, color: t.on(fill), borderRadius: "1em", padding: "0.9em 1.1em", border: `0.08em solid ${t.line}` }}>
+                <div style={{ fontSize: "0.78em", fontWeight: 600 }}>{label}</div>
+                <div style={{ fontFamily: display, fontWeight: 500, fontSize: "2em", lineHeight: 1.15, marginTop: "0.15em" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "2.05fr 1fr 1fr", gap: "0.9em", flex: 1.25, minHeight: 0 }}>
+            <div style={{ ...card, ...col({ gap: "0.5em" }) }}>
+              <div style={row({ justifyContent: "space-between" })}>
+                <span style={title}>Trend</span>
+                <div style={row({ gap: "0.9em", fontSize: "0.6em", fontWeight: 700, letterSpacing: "0.04em" })}>
+                  {["NEW", "RENEWALS", "CHURNS"].map((k, i) => (
+                    <span key={k} style={row({ gap: "0.4em" })}>
+                      <i style={{ width: "0.8em", height: "0.8em", borderRadius: "50%", background: trendFill[i], border: `0.08em solid ${t.line}` }} />
+                      {k}
+                    </span>
+                  ))}
+                  <span style={dropdown}>This year</span>
+                </div>
+              </div>
+              <div style={row({ flex: 1, alignItems: "stretch", gap: "0.6em", minHeight: 0 })}>
+                <div style={col({ justifyContent: "space-between", fontSize: "0.6em", color: t.muted, paddingBottom: "1.6em" })}>
+                  {["$15k", "$10k", "$5k", "$0"].map((v) => (
+                    <span key={v}>{v}</span>
+                  ))}
+                </div>
+                <div style={col({ flex: 1 })}>
+                  <div style={row({ flex: 1, alignItems: "flex-end", justifyContent: "space-around", borderBottom: `0.08em solid ${t.line}`, borderTop: `0.08em solid ${t.line}` })}>
+                    {trend.map((group, g) => (
+                      <div key={g} style={row({ alignItems: "flex-end", gap: "0.12em", height: "100%" })}>
+                        {group.map((h, i) => (
+                          <span key={i} style={{ width: "0.85em", height: `${h}%`, background: trendFill[i] }} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={row({ justifyContent: "space-around", fontSize: "0.62em", color: t.muted, paddingTop: "0.5em" })}>
+                    {months.map((m) => (
+                      <span key={m}>{m}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ ...card, ...col({ gap: "0.4em", alignItems: "center" }) }}>
+              <div style={row({ justifyContent: "space-between", width: "100%" })}>
+                <span style={title}>Sales</span>
+                <span style={dropdown}>This year</span>
+              </div>
+              <svg viewBox="0 0 42 42" style={{ width: "8.2em", height: "8.2em" }}>
+                {plans.map(([name, v, fill]) => {
+                  const el = <circle key={name} cx="21" cy="21" r="15.915" fill="none" stroke={fill} strokeWidth="6.5" strokeDasharray={`${v} ${100 - v}`} strokeDashoffset={25 - offset} />;
+                  offset += v;
+                  return el;
+                })}
+                <text x="21" y="21" textAnchor="middle" fontSize="6" fontWeight="700" fill={t.ink} fontFamily={display}>342</text>
+                <text x="21" y="25.5" textAnchor="middle" fontSize="2.4" fill={t.muted}>SALES</text>
+              </svg>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.3em 0.6em", fontSize: "0.56em", fontWeight: 700, letterSpacing: "0.04em", width: "100%" }}>
+                {plans.map(([name, , fill]) => (
+                  <span key={name} style={row({ gap: "0.45em" })}>
+                    <i style={{ width: "0.9em", height: "0.9em", borderRadius: "50%", background: fill, border: `0.08em solid ${t.line}` }} />
+                    {name.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ ...card, ...col({ gap: "0.3em" }) }}>
+              <span style={title}>Transactions</span>
+              <div style={col({ flex: 1, justifyContent: "space-around" })}>
+                {rows.map(([name, plan, amount, fill], i) => (
+                  <div key={i} style={row({ gap: "0.5em", fontSize: "0.7em", padding: "0.3em 0", borderBottom: `0.08em solid ${t.line}` })}>
+                    <b>{name}</b>
+                    <span style={{ ...badge(fill), fontSize: "0.72em", marginLeft: "auto" }}>{plan}</span>
+                    <span style={{ color: t.muted, width: "3em", textAlign: "right" }}>{amount}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ textAlign: "center", fontSize: "0.78em", fontWeight: 600, padding: "0.65em", borderRadius: "0.6em", background: t.accent, color: t.onAccent }}>View all transactions</div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.9em", flex: 1, minHeight: 0 }}>
+            <div style={{ ...card, ...col({ gap: "0.5em" }) }}>
+              <div style={row({ justifyContent: "space-between" })}>
+                <span style={title}>Support tickets</span>
+                <span style={dropdown}>This week</span>
+              </div>
+              <div style={row({ gap: "0.5em", fontSize: "0.68em" })}>
+                {(
+                  [
+                    ["All", t.line, true],
+                    ["Open", t.primary, false],
+                    ["Pending", t.accent, false],
+                    ["Closed", t.ink, false],
+                  ] as [string, string, boolean][]
+                ).map(([label, ring, filled]) => (
+                  <span key={label} style={{ padding: "0.3em 0.95em", borderRadius: "2em", border: `0.16em solid ${ring}`, background: filled ? ring : "transparent" }}>{label}</span>
+                ))}
+              </div>
+              <div style={col({ flex: 1, justifyContent: "space-around" })}>
+                {tickets.map(([email, topic, status, fill], i) => (
+                  <div key={i} style={row({ gap: "0.7em", fontSize: "0.68em", padding: "0.28em 0", borderBottom: i < tickets.length - 1 ? `0.08em solid ${t.line}` : "none" })}>
+                    <i style={{ width: "1.1em", height: "1.1em", borderRadius: "50%", background: i === 0 ? t.secondary : t.line }} />
+                    <span style={{ flex: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</span>
+                    <b style={{ flex: 1 }}>{topic}</b>
+                    <span style={{ ...badge(fill), fontSize: "0.78em" }}>{status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ ...card, ...col({ gap: "0.5em" }) }}>
+              <div style={row({ justifyContent: "space-between" })}>
+                <span style={title}>Customer regions</span>
+                <div style={row({ gap: "0.9em", fontSize: "0.6em", fontWeight: 700, letterSpacing: "0.04em" })}>
+                  <span style={row({ gap: "0.4em" })}><i style={{ width: "0.8em", height: "0.8em", borderRadius: "50%", background: t.secondary }} />ACTIVE</span>
+                  <span style={row({ gap: "0.4em" })}><i style={{ width: "0.8em", height: "0.8em", borderRadius: "50%", background: t.line }} />INACTIVE</span>
+                </div>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+              <svg viewBox="0 0 40 14" preserveAspectRatio="xMidYMid meet" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+                {WORLD.flatMap((line, y) =>
+                  line.split("").map((ch, x) => {
+                    if (ch !== "#") return null;
+                    const active = ACTIVE_REGIONS.some(([x0, x1, y0, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+                    return <circle key={`${x}-${y}`} cx={x + 0.5} cy={y + 0.5} r="0.36" fill={active ? t.secondary : t.line} />;
+                  })
+                )}
+              </svg>
+              </div>
             </div>
           </div>
         </div>
@@ -487,6 +736,7 @@ const Brand: React.FC<TProps> = ({ t }) => {
 const RENDER: Record<TemplateId, React.FC<TProps>> = {
   website: Website,
   dashboard: Dashboard,
+  admin: SaasAdmin,
   report: Report,
   mobile: Mobile,
   brand: Brand,
