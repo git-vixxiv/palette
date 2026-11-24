@@ -480,6 +480,7 @@ function analyze(colors: { hex: string; role: ColorRole }[], mode: HarmonyMode):
   const lightness = 0.6 * smooth(0.2, 0.62, range) + 0.4 * spacing;
 
   // Harmony between the chromatic colours.
+  let separation = Infinity;
   let worstClash: Analysis["worstClash"] = null;
   let clashSum = 0;
   let pairs = 0;
@@ -488,6 +489,10 @@ function analyze(colors: { hex: string; role: ColorRole }[], mode: HarmonyMode):
     for (let j = i + 1; j < n; j++) {
       const d = deltaE(sw[i], sw[j]);
       if (!closest || d < closest.value) closest = { i, j, value: d };
+      // Two near-whites or two near-blacks only need a small step between
+      // them; any other pair should be plainly different at a glance.
+      const sameNeutral = sw[i].role === sw[j].role && isNeutral(sw[i]);
+      separation = Math.min(separation, d / (sameNeutral ? 0.045 : 0.11));
       if (sw[i].C >= CHROMATIC && sw[j].C >= CHROMATIC) {
         const c = clash(sw[i], sw[j]);
         clashSum += c;
@@ -514,7 +519,7 @@ function analyze(colors: { hex: string; role: ColorRole }[], mode: HarmonyMode):
     WEIGHTS.harmony.fit * scheme.fit +
     WEIGHTS.harmony.coverage * scheme.coverage;
 
-  const distinct = closest ? smooth(0.015, 0.07, closest.value) : 1;
+  const distinct = Number.isFinite(separation) ? smooth(0.2, 1, separation) : 1;
 
   // One colour should be the loudest, and it should be the accent.
   const accents = sw.filter((s) => s.role === "accent");
@@ -589,7 +594,7 @@ const TONES: Tone[] = [
 ];
 
 const ROLE_ORDER: ColorRole[] = ["primary", "secondary", "accent", "neutral-light", "neutral-dark"];
-const LIGHT_TIERS = [0.972, 0.925, 0.875, 0.83];
+const LIGHT_TIERS = [0.975, 0.925, 0.87, 0.81];
 const DARK_TIERS = [0.185, 0.27, 0.345, 0.41];
 
 interface Slot {
@@ -636,10 +641,18 @@ function fitKeyHue(slots: Slot[], anchors: number[], rng: Rng): number {
   return weighted(rng, best, best.map((k) => Math.pow(hueAppeal(k), 3)));
 }
 
-function anchorFor(role: ColorRole, anchors: number[], rng: Rng): number {
+function anchorFor(role: ColorRole, anchors: number[], rng: Rng, nth = 0): number {
   const last = anchors.length - 1;
   if (last === 0) return anchors[0];
   const idx = anchors.map((_, i) => i);
+  if (nth > 0) {
+    // A repeat of a role (second primary, third accent, ...) takes the next
+    // hue in the scheme, so repeats spread across it and do not pile onto
+    // one hue.
+    const far = anchors.map((a) => hueDist(0, a));
+    const start = role === "primary" ? 0 : role === "secondary" ? 1 : far.indexOf(Math.max(...far));
+    return anchors[(start + nth) % anchors.length];
+  }
   if (role === "primary") return anchors[0];
   if (role === "secondary") {
     return anchors[weighted(rng, idx, idx.map((i) => (i === 1 ? 0.55 : i === 0 ? 0.35 : 0.1 / Math.max(1, last - 1))))];
@@ -655,6 +668,18 @@ function naturalL(base: number, h: number, pull: number): number {
   // Yellows are only liked light, so they are pulled much harder.
   const p = lerp(pull, 0.8, gauss(h, YELLOW, 26));
   return clamp(lerp(base, cuspLightness(h), p), 0.3, 0.9);
+}
+
+/**
+ * Lightness choices for a repeat of a role. They span the whole usable range
+ * so that several colours with the same role read as a deliberate scale of
+ * tints and shades, never as near-copies of each other.
+ */
+function ladder(rng: Rng, lo: number, hi: number, h: number): number[] {
+  const steps = 7;
+  const all = Array.from({ length: steps }, (_, i) => lo + ((hi - lo) * i) / (steps - 1) + between(rng, -0.015, 0.015));
+  const clean = all.filter((L) => muddy(L, 0.08, h) < 0.3);
+  return clean.length >= 3 ? clean : all;
 }
 
 /** Pick the option furthest in lightness from colours already placed. */
@@ -704,7 +729,9 @@ function buildCandidate(slots: Slot[], concept: Concept, rng: Rng): Oklch[] {
 
   const out: (Oklch | null)[] = slots.map((s) => s.fixed);
   const placed = () => out.filter((c): c is Oklch => !!c);
-  const chromaLs = () => placed().filter((c) => c.C >= CHROMATIC).map((c) => c.L);
+  // Lightness of everything placed so far. Low-chroma colours count too: a
+  // muted secondary still needs its own lightness step.
+  const chromaLs = () => placed().map((c) => c.L);
 
   // The reference colour everything else is built around.
   const lockedPrimary = slots.find((s) => s.role === "primary" && s.fixed && s.fixed.C >= CHROMATIC)?.fixed;
@@ -721,25 +748,36 @@ function buildCandidate(slots: Slot[], concept: Concept, rng: Rng): Oklch[] {
     .filter((x) => !x.s.fixed)
     .sort((a, b) => ROLE_ORDER.indexOf(a.s.role) - ROLE_ORDER.indexOf(b.s.role));
 
+  // How many colours of each role are already in place (locked ones count),
+  // so the second and later colour of a role is generated as a repeat.
+  const placedOfRole: Partial<Record<ColorRole, number>> = {};
+  slots.forEach((slot) => {
+    if (slot.fixed) placedOfRole[slot.role] = (placedOfRole[slot.role] ?? 0) + 1;
+  });
+
   for (const { s, i } of order) {
     let color: Oklch;
+    const nth = placedOfRole[s.role] ?? 0;
+    placedOfRole[s.role] = nth + 1;
 
     if (s.role === "primary") {
-      const h = steerHue(key + anchorFor("primary", anchors, rng) + between(rng, -5, 5));
-      const options = [0, 1, 2].map(() =>
-        naturalL(between(rng, tone.primaryL[0], tone.primaryL[1]), h, tone.pull)
-      );
+      const h = steerHue(key + anchorFor("primary", anchors, rng, nth) + between(rng, -5, 5));
+      const options =
+        nth > 0
+          ? ladder(rng, 0.36, 0.82, h)
+          : [0, 1, 2].map(() => naturalL(between(rng, tone.primaryL[0], tone.primaryL[1]), h, tone.pull));
       const L = spreadL(options, chromaLs());
-      color = { L, C: Math.min(chromaCeiling(PRIMARY_MAX_C, h), maxChroma(L, h) * between(rng, tone.primaryRel[0], tone.primaryRel[1])), h };
+      const relLow = nth > 0 ? tone.primaryRel[0] * 0.75 : tone.primaryRel[0];
+      color = { L, C: Math.min(chromaCeiling(PRIMARY_MAX_C, h), maxChroma(L, h) * between(rng, relLow, tone.primaryRel[1])), h };
       if (!refIsReal) {
         ref = color;
         refIsReal = true;
       }
     } else if (s.role === "secondary") {
-      let h = steerHue(key + anchorFor("secondary", anchors, rng) + between(rng, -6, 6));
+      let h = steerHue(key + anchorFor("secondary", anchors, rng, nth) + between(rng, -6, 6));
       const sameFamily = hueDist(h, ref.h) < 14;
-      const options: number[] = [];
-      for (let k = 0; k < 4; k++) {
+      const options: number[] = nth > 0 ? ladder(rng, 0.32, 0.86, h) : [];
+      for (let k = 0; k < 4 && nth === 0; k++) {
         const up = rng() < (ref.L < 0.55 ? 0.65 : 0.35);
         const step = sameFamily ? between(rng, 0.16, 0.3) : between(rng, 0.12, 0.26);
         let L = ref.L + (up ? step : -step);
@@ -755,12 +793,15 @@ function buildCandidate(slots: Slot[], concept: Concept, rng: Rng): Oklch[] {
       }
       color = { L, C: Math.min(chromaCeiling(PRIMARY_MAX_C, h), maxChroma(L, h) * between(rng, tone.secondaryRel[0], tone.secondaryRel[1])), h };
     } else if (s.role === "accent") {
-      const h = steerHue(key + anchorFor("accent", anchors, rng) + between(rng, -6, 6));
+      const h = steerHue(key + anchorFor("accent", anchors, rng, nth) + between(rng, -6, 6));
       // Bright enough to pop on a dark ground, but only yellows may go very
       // light: a near-white cyan or lime at full chroma is a neon.
       const ceiling = lerp(0.78, 0.9, gauss(h, YELLOW, 24));
       const base = naturalL(between(rng, 0.6, 0.7), h, 0.3);
-      const options = [base, base + 0.07, base - 0.07, base + 0.13, base - 0.13].map((L) => clamp(L, 0.56, ceiling));
+      const options =
+        nth > 0
+          ? ladder(rng, 0.5, Math.max(ceiling, 0.84), h)
+          : [base, base + 0.07, base - 0.07, base + 0.13, base - 0.13].map((L) => clamp(L, 0.56, ceiling));
       const L = spreadL(options, chromaLs());
       color = { L, C: Math.min(chromaCeiling(ACCENT_MAX_C, h), maxChroma(L, h) * between(rng, tone.accentRel[0], tone.accentRel[1])), h };
     } else if (s.role === "neutral-light") {
