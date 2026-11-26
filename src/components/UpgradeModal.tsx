@@ -14,7 +14,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { initSquareCard, isSquareConfigured, SQUARE_ENV } from "../utils/square";
+import { initSquareCard, isSquareConfigured, SQUARE_ENV, SQUARE_LOAD_ERROR } from "../utils/square";
 import { RefreshCw } from "lucide-react";
 
 export const UpgradeModal: React.FC = () => {
@@ -35,6 +35,7 @@ export const UpgradeModal: React.FC = () => {
   // Set when Square's card form could not be loaded; cleared by "Try again".
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadTry, setLoadTry] = useState(1);
 
   // Live Square Card payment-method instance (PCI-compliant hosted iframe).
   const cardRef = useRef<any>(null);
@@ -47,17 +48,27 @@ export const UpgradeModal: React.FC = () => {
     setLoadError("");
 
     (async () => {
-      try {
-        const card = await initSquareCard(CARD_CONTAINER_ID);
-        if (cancelled) {
-          card.destroy();
+      // Square's form is several separate downloads from its CDN; on a flaky
+      // connection any one of them can fail and Square then reports that it
+      // "was unable to be initialized in time". Starting again usually works,
+      // so try a few times before asking the customer to do anything.
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (cancelled) return;
+        setLoadTry(attempt);
+        try {
+          const card = await initSquareCard(CARD_CONTAINER_ID);
+          if (cancelled) {
+            card.destroy();
+            return;
+          }
+          cardRef.current = card;
+          setCardReady(true);
           return;
+        } catch {
+          document.getElementById(CARD_CONTAINER_ID)?.replaceChildren();
         }
-        cardRef.current = card;
-        setCardReady(true);
-      } catch (err: any) {
-        if (!cancelled) setLoadError(err?.message || "Could not load the secure card form.");
       }
+      if (!cancelled) setLoadError(SQUARE_LOAD_ERROR);
     })();
 
     return () => {
@@ -354,7 +365,9 @@ export const UpgradeModal: React.FC = () => {
                         className="bg-white border border-slate-200 rounded p-2 min-h-[44px]"
                       />
                       {!cardReady && isSquareConfigured && !formError && !loadError && (
-                        <p className="text-[10px] text-slate-400 mt-1 font-mono">Loading secure card form…</p>
+                        <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                          Loading secure card form…{loadTry > 1 ? ` (attempt ${loadTry} of 3)` : ""}
+                        </p>
                       )}
                     </div>
 

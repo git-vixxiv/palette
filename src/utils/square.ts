@@ -26,7 +26,7 @@ const SDK_URL =
 let sdkPromise: Promise<any> | null = null;
 
 export const SQUARE_LOAD_ERROR =
-  "Couldn't reach Square's secure payment form. Check your connection, pause any ad or tracker blocker for this site, then try again.";
+  "Couldn't load Square's secure payment form. This is usually a connection problem. Try again, or switch networks (for example a phone hotspot); an ad or tracker blocker can also cause it.";
 
 /** One attempt at injecting the SDK script, with a timeout. */
 function injectSdkOnce(): Promise<any> {
