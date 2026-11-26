@@ -131,7 +131,16 @@ export const UpgradeModal: React.FC = () => {
         setShowUpgradeModal(false);
       }, 2200);
     } catch (err: any) {
-      setFormError(err?.message || "Payment failed. Please try again.");
+      // A bare "internal" / "unavailable" comes from the platform when the
+      // checkout service itself could not be reached, before any charge is
+      // attempted. Show something a customer can act on.
+      const raw = String(err?.message || "");
+      const serviceDown = /^(internal|unavailable|deadline-exceeded)$/i.test(raw.trim()) || err?.code === "functions/unavailable";
+      setFormError(
+        serviceDown
+          ? "Checkout is temporarily unavailable on our side. Your card was not charged. Please try again in a little while."
+          : raw || "Payment failed. Please try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
