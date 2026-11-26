@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { X, Mail, Lock, User as UserIcon, LogIn } from "lucide-react";
 import { motion } from "motion/react";
@@ -6,11 +6,13 @@ import { motion } from "motion/react";
 interface AuthModalProps {
   open: boolean;
   onClose: () => void;
+  /** "upgrade" when the visitor came here from an upgrade button. */
+  reason?: "signin" | "upgrade";
 }
 
 type Mode = "signin" | "signup" | "reset";
 
-export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, reason = "signin" }) => {
   const { loginWithGoogle, loginWithEmail, registerWithEmail, sendReset } = useApp();
 
   const [mode, setMode] = useState<Mode>("signin");
@@ -19,6 +21,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Someone arriving from an upgrade button most likely has no account yet.
+  useEffect(() => {
+    if (open) {
+      setMode(reason === "upgrade" ? "signup" : "signin");
+      setError("");
+    }
+  }, [open, reason]);
 
   if (!open) return null;
 
@@ -76,7 +86,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
           <p className="text-xs text-slate-500 font-sans mt-1">
             {mode === "reset"
               ? "We'll email you a password reset link."
-              : "Save palettes to your cloud vault and manage your subscription."}
+              : reason === "upgrade"
+                ? "One quick step before Pro: your subscription is tied to an account. Create one or sign in and you'll go straight on to checkout."
+                : "Save palettes to your cloud vault and manage your subscription."}
           </p>
         </div>
 

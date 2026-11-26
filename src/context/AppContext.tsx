@@ -51,7 +51,12 @@ interface AppContextType {
   userSubscription: UserSubscription;
   loadingSub: boolean;
   showUpgradeModal: boolean;
+  /** Opening it while signed out asks the visitor to sign in first, then continues. */
   setShowUpgradeModal: (show: boolean) => void;
+  /** Which sign-in prompt is open, if any. "upgrade" means it leads on to checkout. */
+  authPrompt: null | "signin" | "upgrade";
+  openAuth: (reason?: "signin" | "upgrade") => void;
+  closeAuth: () => void;
   // Real Square checkout: takes a tokenized card from the Web Payments SDK,
   // charges via the backend Cloud Function, then refreshes the local tier.
   purchasePro: (
@@ -112,7 +117,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updatedAt: new Date().toISOString()
   });
   const [loadingSub, setLoadingSub] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModalState] = useState(false);
+  const [authPrompt, setAuthPrompt] = useState<null | "signin" | "upgrade">(null);
+  // The account whose subscription has finished loading; used to wait for the
+  // real tier before deciding whether a new sign-in still needs to upgrade.
+  const [subLoadedFor, setSubLoadedFor] = useState<string | null>(null);
+  const upgradeAfterSignIn = React.useRef(false);
+
+  // A subscription belongs to an account, so a signed-out visitor who asks to
+  // upgrade is taken to sign in or create an account first. Once they are in,
+  // the upgrade screen opens by itself (see the effect further down).
+  const setShowUpgradeModal = (show: boolean) => {
+    if (show && isFirebaseConfigured && auth && !auth.currentUser) {
+      upgradeAfterSignIn.current = true;
+      setAuthPrompt("upgrade");
+      return;
+    }
+    setShowUpgradeModalState(show);
+  };
+  const openAuth = (reason: "signin" | "upgrade" = "signin") => setAuthPrompt(reason);
+  const closeAuth = () => {
+    // Closed without signing in: drop the pending upgrade.
+    if (!auth?.currentUser) upgradeAfterSignIn.current = false;
+    setAuthPrompt(null);
+  };
 
   // Default color palette setup initialized with brand colors: #1a1a1a, #d1c69e, #2589BD, #f4f4f4
   const [currentColors, setColorsState] = useState<ColorItem[]>([
@@ -209,6 +237,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error("Fetch subscription error:", err);
       } finally {
         setLoadingSub(false);
+        setSubLoadedFor(uid);
       }
     } else {
       // Offline fallback: load from LocalStorage
@@ -228,6 +257,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error("Local load premium fail:", e);
       } finally {
         setLoadingSub(false);
+        setSubLoadedFor(uid);
       }
     }
   };
@@ -239,6 +269,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchSubscription("local_guest");
     }
   }, [user]);
+
+  // Continue to checkout after a sign-in that was started from an upgrade
+  // button, once that account's real tier is known.
+  useEffect(() => {
+    if (!upgradeAfterSignIn.current || !user || subLoadedFor !== user.uid) return;
+    upgradeAfterSignIn.current = false;
+    setAuthPrompt(null);
+    if (userSubscription.tier === "free") setShowUpgradeModalState(true);
+    else showToast("This account already has Pro. You're all set.", "success");
+  }, [user, subLoadedFor, userSubscription.tier]);
 
   // Re-read the authoritative subscription tier from the backend/Firestore.
   const refreshSubscription = async () => {
@@ -783,6 +823,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loadingSub,
         showUpgradeModal,
         setShowUpgradeModal,
+        authPrompt,
+        openAuth,
+        closeAuth,
         purchasePro,
         cancelSubscription,
         refreshSubscription,

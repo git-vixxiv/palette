@@ -5,9 +5,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { AuthModal } from "./AuthModal";
 
 export const Header: React.FC = () => {
-  const { user, logout, isDbActive, savedPalettes, userSubscription, setShowUpgradeModal, cancelSubscription } = useApp();
+  const { user, logout, isDbActive, savedPalettes, userSubscription, setShowUpgradeModal, cancelSubscription, authPrompt, openAuth, closeAuth } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
 
   return (
     <header className="flex items-center justify-between px-6 md:px-12 py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
@@ -81,7 +80,7 @@ export const Header: React.FC = () => {
                 initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -5 }}
-                onClick={() => setAuthOpen(true)}
+                onClick={() => openAuth("signin")}
                 className="px-4 py-2 text-xs font-bold uppercase tracking-widest bg-slate-900 hover:bg-slate-800 text-white rounded-md transition-all shadow-xs flex items-center border border-transparent cursor-pointer"
               >
                 <span className="hidden sm:inline" style={{ fontSize: "9.6px" }}>Sign In</span>
@@ -214,7 +213,7 @@ export const Header: React.FC = () => {
         </div>
       </div>
 
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <AuthModal open={authPrompt !== null} reason={authPrompt ?? "signin"} onClose={closeAuth} />
     </header>
   );
 };

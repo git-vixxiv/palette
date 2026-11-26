@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { initSquareCard, isSquareConfigured, SQUARE_ENV } from "../utils/square";
+import { RefreshCw } from "lucide-react";
 
 export const UpgradeModal: React.FC = () => {
   const {
@@ -31,6 +32,9 @@ export const UpgradeModal: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [formError, setFormError] = useState("");
   const [cardReady, setCardReady] = useState(false);
+  // Set when Square's card form could not be loaded; cleared by "Try again".
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // Live Square Card payment-method instance (PCI-compliant hosted iframe).
   const cardRef = useRef<any>(null);
@@ -40,6 +44,7 @@ export const UpgradeModal: React.FC = () => {
   useEffect(() => {
     if (!showUpgradeModal || !isSquareConfigured) return;
     let cancelled = false;
+    setLoadError("");
 
     (async () => {
       try {
@@ -51,7 +56,7 @@ export const UpgradeModal: React.FC = () => {
         cardRef.current = card;
         setCardReady(true);
       } catch (err: any) {
-        if (!cancelled) setFormError(err?.message || "Could not load secure card form.");
+        if (!cancelled) setLoadError(err?.message || "Could not load the secure card form.");
       }
     })();
 
@@ -67,7 +72,7 @@ export const UpgradeModal: React.FC = () => {
         cardRef.current = null;
       }
     };
-  }, [showUpgradeModal]);
+  }, [showUpgradeModal, loadAttempt]);
 
   if (!showUpgradeModal) return null;
 
@@ -161,8 +166,8 @@ export const UpgradeModal: React.FC = () => {
             </div>
 
             <h3 className="text-2xl md:text-3xl font-display font-black tracking-tight mb-2 leading-none">
-              Maximize Your <br />
-              Color Science.
+              The Perfect Palette, <br />
+              Backed by (Color) Science
             </h3>
             <p className="text-xs text-slate-400 font-sans mb-8">
               Unlock the core algorithms, expanding to complete bento-grid layouts with WCAG contrast metrics.
@@ -318,6 +323,20 @@ export const UpgradeModal: React.FC = () => {
                       </p>
                     )}
 
+                    {loadError && (
+                      <div className="text-xs text-rose-600 font-sans font-medium bg-rose-50 border-l-4 border-rose-500 p-2.5 rounded space-y-2">
+                        <p>{loadError}</p>
+                        <button
+                          type="button"
+                          onClick={() => setLoadAttempt((n) => n + 1)}
+                          className="inline-flex items-center gap-1.5 py-1.5 px-3 rounded bg-white border border-rose-300 text-rose-700 font-bold uppercase tracking-wider text-[10px] cursor-pointer hover:bg-rose-100"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Try again
+                        </button>
+                      </div>
+                    )}
+
                     {formError && (
                       <p className="text-xs text-rose-500 font-sans font-medium bg-rose-50 border-l-4 border-rose-500 p-2.5 rounded">
                         {formError}
@@ -334,7 +353,7 @@ export const UpgradeModal: React.FC = () => {
                         id={CARD_CONTAINER_ID}
                         className="bg-white border border-slate-200 rounded p-2 min-h-[44px]"
                       />
-                      {!cardReady && isSquareConfigured && !formError && (
+                      {!cardReady && isSquareConfigured && !formError && !loadError && (
                         <p className="text-[10px] text-slate-400 mt-1 font-mono">Loading secure card form…</p>
                       )}
                     </div>

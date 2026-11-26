@@ -25,28 +25,61 @@ const SDK_URL =
 
 let sdkPromise: Promise<any> | null = null;
 
-/** Lazily inject the Square Web Payments SDK and resolve the global `Square`. */
+export const SQUARE_LOAD_ERROR =
+  "Couldn't reach Square's secure payment form. Check your connection, pause any ad or tracker blocker for this site, then try again.";
+
+/** One attempt at injecting the SDK script, with a timeout. */
+function injectSdkOnce(): Promise<any> {
+  return new Promise((resolve, reject) => {
+    // A script tag left over from a failed attempt will never fire again.
+    document.querySelectorAll<HTMLScriptElement>(`script[src^="${SDK_URL}"]`).forEach((el) => el.remove());
+    const script = document.createElement("script");
+    script.src = SDK_URL;
+    script.async = true;
+    const fail = () => {
+      clearTimeout(timer);
+      script.remove();
+      reject(new Error(SQUARE_LOAD_ERROR));
+    };
+    const timer = setTimeout(fail, 15000);
+    script.onload = () => {
+      clearTimeout(timer);
+      if ((window as any).Square) resolve((window as any).Square);
+      else fail();
+    };
+    script.onerror = fail;
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * Lazily load the Square Web Payments SDK and resolve the global `Square`.
+ * A failed load is retried twice with a short pause, and a final failure is
+ * not remembered, so the next call (for example a "Try again" button) starts
+ * fresh without a page reload.
+ */
 export function loadSquareSdk(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("No window"));
   if ((window as any).Square) return Promise.resolve((window as any).Square);
   if (sdkPromise) return sdkPromise;
 
-  sdkPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${SDK_URL}"]`);
-    if (existing) {
-      existing.addEventListener("load", () => resolve((window as any).Square));
-      existing.addEventListener("error", () => reject(new Error("Failed to load Square SDK")));
-      if ((window as any).Square) resolve((window as any).Square);
-      return;
+  const attempt = (async () => {
+    let lastError: unknown;
+    for (let i = 0; i < 3; i++) {
+      try {
+        return await injectSdkOnce();
+      } catch (err) {
+        lastError = err;
+        if (i < 2) await new Promise((r) => setTimeout(r, 800 * (i + 1)));
+      }
     }
-    const script = document.createElement("script");
-    script.src = SDK_URL;
-    script.async = true;
-    script.onload = () => resolve((window as any).Square);
-    script.onerror = () => reject(new Error("Failed to load Square SDK"));
-    document.head.appendChild(script);
+    throw lastError;
+  })();
+  sdkPromise = attempt;
+  attempt.catch(() => {
+    if (sdkPromise === attempt) sdkPromise = null;
   });
-  return sdkPromise;
+  return attempt;
 }
 
 /**
