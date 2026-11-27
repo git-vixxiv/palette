@@ -88,7 +88,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, reason = "s
               ? "We'll email you a password reset link."
               : reason === "upgrade"
                 ? "One quick step before Pro: your subscription is tied to an account. Create one or sign in and you'll go straight on to checkout."
-                : "Save palettes to your cloud vault and manage your subscription."}
+                : "Sign in to manage your plan and your palette library."}
           </p>
         </div>
 

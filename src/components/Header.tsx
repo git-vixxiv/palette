@@ -1,18 +1,20 @@
 import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { Palette, LogIn, LogOut, ChevronDown, CheckCircle, Database, Sparkles, Star, Award } from "lucide-react";
+import { LogOut, ChevronDown, CheckCircle, Sparkles, Crown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { AuthModal } from "./AuthModal";
 import logoUrl from "../assets/logo.webp";
 
 export const Header: React.FC = () => {
-  const { user, logout, isDbActive, savedPalettes, userSubscription, setShowUpgradeModal, cancelSubscription, authPrompt, openAuth, closeAuth } = useApp();
+  const { user, logout, userSubscription, setShowUpgradeModal, cancelSubscription, authPrompt, openAuth, closeAuth } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
+  const isPro = userSubscription.tier !== "free";
+  const goldBadge = { background: "linear-gradient(135deg, #F7DC8A 0%, #D9A62E 55%, #B8860B 100%)" };
 
   return (
     <header className="flex items-center justify-between gap-3 px-4 sm:px-6 md:px-8 xl:px-12 py-3 sm:py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
       {/* Brand Logo and Title */}
-      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 sm:shrink-0">
+      <a href="/" className="flex items-center gap-2.5 sm:gap-3 min-w-0 sm:shrink-0" aria-label="palette by vixxiv, home">
         <img src={logoUrl} alt="" width={40} height={40} className="w-10 h-10 shrink-0 object-contain" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -29,32 +31,22 @@ export const Header: React.FC = () => {
             Color science engine, WCAG contrast matrix compliance, and AI optimization
           </p>
         </div>
-      </div>
+      </a>
 
       {/* User Actions */}
       <div className="flex items-center gap-3 sm:gap-6 shrink-0">
         <nav className="hidden lg:flex items-center gap-4 xl:gap-5 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-          <a href="#visualize" className="hover:text-[#2589BD] transition-colors">In Action</a>
-          <a href="#scoring-analytics" className="hover:text-[#2589BD] transition-colors">Theory & Analytics</a>
-          <a href="#accessibility-analyzer" className="hover:text-[#2589BD] transition-colors">Contrast Matrix</a>
-          <a href="#saved-cabinet" className="hover:text-[#2589BD] transition-colors">Vault Cabinet</a>
+          <a href="/#visualize" className="hover:text-[#2589BD] transition-colors">In Action</a>
+          <a href="/#scoring-analytics" className="hover:text-[#2589BD] transition-colors">Theory & Analytics</a>
+          <a href="/#accessibility-analyzer" className="hover:text-[#2589BD] transition-colors">Contrast Matrix</a>
+          <a href="/#palette-library" className="hover:text-[#2589BD] transition-colors">Palette Library</a>
         </nav>
 
         <div className="hidden lg:block h-5 w-[1px] bg-slate-200" />
 
         <div className="flex items-center gap-2 sm:gap-4">
-          {/* Connection badge status */}
-          <div className="text-right whitespace-nowrap hidden sm:block lg:hidden xl:block">
-            <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">
-              {isDbActive ? "● Cloud Vault" : "○ Local Vault"}
-            </p>
-            <p className="text-[10px] font-sans font-bold uppercase tracking-wider" style={{ color: "#2589BD" }}>
-              {savedPalettes.length} Saved Combo{savedPalettes.length !== 1 && "s"}
-            </p>
-          </div>
-
           {/* Join Pro CTA badge */}
-          {userSubscription.tier === "free" ? (
+          {!isPro && (
             <button
               onClick={() => setShowUpgradeModal(true)}
               className="h-9 px-3 text-[11px] font-sans font-extrabold uppercase tracking-wider rounded-md border cursor-pointer transition-all hover:bg-rose-50 flex items-center gap-1.5 shrink-0 bg-white whitespace-nowrap"
@@ -64,14 +56,6 @@ export const Header: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin-hover" />
               <span>Go Pro</span>
             </button>
-          ) : (
-            <div
-              className="h-9 px-2.5 text-[10px] font-sans font-black uppercase tracking-wider rounded-md border shrink-0 flex items-center gap-1 select-none whitespace-nowrap"
-              style={{ color: "#22c55e", borderColor: "#22c55e", backgroundColor: "rgba(34, 197, 94, 0.05)" }}
-            >
-              <Award className="w-3 h-3 text-emerald-500" />
-              <span>Pro Active</span>
-            </div>
           )}
 
           <AnimatePresence mode="wait">
@@ -94,14 +78,22 @@ export const Header: React.FC = () => {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   onClick={() => setMenuOpen(!menuOpen)}
-                  className="h-9 flex items-center gap-1.5 sm:gap-2.5 px-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md transition-all cursor-pointer"
+                  className={`h-9 flex items-center gap-1.5 sm:gap-2 pl-1 pr-1.5 border rounded-md transition-all cursor-pointer ${
+                    isPro ? "bg-amber-50/70 hover:bg-amber-50 border-amber-300" : "bg-slate-50 hover:bg-slate-100 border-slate-200"
+                  }`}
+                  title={isPro ? "Pro member account" : "Account"}
                 >
                   <img
                     src={user.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50"}
-                    alt="Avatar"
+                    alt=""
                     referrerPolicy="no-referrer"
                     className="w-7 h-7 rounded object-cover shadow-3xs border border-white"
                   />
+                  {isPro && (
+                    <span className="w-5 h-5 rounded-full grid place-items-center shrink-0 shadow-sm ring-1 ring-amber-600/20" style={goldBadge} aria-label="Pro member">
+                      <Crown className="w-3 h-3 text-white" strokeWidth={2.5} />
+                    </span>
+                  )}
                   <span className="text-xs font-sans font-bold text-slate-700 max-w-[120px] truncate hidden sm:inline">
                     {user.displayName || "Explorer"}
                   </span>
@@ -121,13 +113,13 @@ export const Header: React.FC = () => {
                       <div className="p-3 border-b border-slate-100">
                         <div className="flex justify-between items-start mb-1">
                           <p className="text-[9px] text-slate-400 font-sans uppercase tracking-widest font-bold">Account Owner</p>
-                          {userSubscription.tier !== "free" ? (
-                            <span className="text-[8px] font-mono uppercase bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-black flex items-center gap-0.5">
-                              <Star className="w-2 h-2 text-emerald-600 fill-emerald-600" /> pro status
+                          {isPro ? (
+                            <span className="text-[9px] font-sans font-extrabold text-white pl-1 pr-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm" style={goldBadge}>
+                              <Crown className="w-2.5 h-2.5" strokeWidth={2.5} /> {userSubscription.tier === "pro-lifetime" ? "Lifetime Pro" : "Pro member"}
                             </span>
                           ) : (
-                            <span className="text-[8px] font-mono uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-                              free tier
+                            <span className="text-[9px] font-sans bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                              Free plan
                             </span>
                           )}
                         </div>
@@ -155,7 +147,7 @@ export const Header: React.FC = () => {
                           <div className="p-2 rounded text-xs bg-emerald-50/50 border border-emerald-100 text-slate-700 font-sans">
                             <p className="font-bold text-emerald-800 flex items-center gap-1">
                               <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                              PRO Membership Active
+                              Thanks for being a Pro member
                             </p>
                             <p className="text-[9px] text-slate-500 mt-1 font-mono">
                               Plan: {userSubscription.pricingPlan || "Beta Access"} <br />
@@ -179,19 +171,9 @@ export const Header: React.FC = () => {
                           </div>
                         )}
 
-                        <div className="flex items-center space-x-2 p-2 rounded text-xs text-slate-600 bg-slate-50">
-                          {isDbActive ? (
-                            <>
-                              <Database className="w-3.5 h-3.5 text-emerald-500" />
-                              <span>Saved to Cloud Firestore</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle className="w-3.5 h-3.5" style={{ color: "#2589BD" }} />
-                              <span>Saved Offline to Browser</span>
-                            </>
-                          )}
-                        </div>
+                        <a href="/refunds" className="block px-3 py-2 rounded text-xs font-sans text-slate-600 hover:bg-slate-50">
+                          Plan, cancellation &amp; refunds
+                        </a>
 
                         <button
                           onClick={() => {

@@ -199,8 +199,8 @@ export const UpgradeModal: React.FC = () => {
                   <Layers className="w-3.5 h-3.5 text-sky-400" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-200">Expand up to 10 Color Columns</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the 5-column limit. Add up to 10 custom shades in a single workbench composition.</p>
+                  <h4 className="text-xs font-bold text-slate-200">Up to 10 Color Swatches</h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the 5-swatch limit and build palettes of up to 10 colors.</p>
                 </div>
               </div>
 
@@ -219,8 +219,8 @@ export const UpgradeModal: React.FC = () => {
                   <Bookmark className="w-3.5 h-3.5 text-emerald-400" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-200">Unlimited Cloud Vault Space</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Archive as many palettes as you want. Standard accounts are capped at only 2 saved combomatrices.</p>
+                  <h4 className="text-xs font-bold text-slate-200">Your Palette Library</h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Save as many palettes as you like and reload them any time. Saving is a Pro feature.</p>
                 </div>
               </div>
 
@@ -258,7 +258,7 @@ export const UpgradeModal: React.FC = () => {
                 </div>
                 <h4 className="text-lg font-display font-black text-slate-800 lowercase">payment authorized!</h4>
                 <p className="text-xs text-slate-500 mt-2 max-w-xs">
-                  Your premium access tier has been updated. Unlocked 10-column workspace, advanced mathematics, and unlimited collections.
+                  Your premium access tier has been updated. You now have up to 10 swatches, every harmony rule, all layouts and exports, and your palette library.
                 </p>
               </motion.div>
             ) : (
@@ -404,7 +404,9 @@ export const UpgradeModal: React.FC = () => {
                 </div>
 
                 <div className="text-center mt-6 text-[10px] text-slate-400">
-                  By upgrading you agree to our terms. {userSubscription.tier !== "free" && userSubscription.tier !== "pro-lifetime" && (
+                  By upgrading you agree to our{" "}
+                  <a href="/terms" target="_blank" rel="noopener" className="underline hover:text-slate-600">Terms</a> and{" "}
+                  <a href="/refunds" target="_blank" rel="noopener" className="underline hover:text-slate-600">Refund policy</a>. Payments are non-refundable. {userSubscription.tier !== "free" && userSubscription.tier !== "pro-lifetime" && (
                     <>
                       Want to cancel your subscription?{" "}
                       <button

@@ -85,6 +85,17 @@ export const PaletteGenerator: React.FC = () => {
     showToast("Color swapped", "info");
   };
 
+  // Saving is a Pro feature: free and signed-out visitors go to the upgrade
+  // flow instead of being asked to name a palette they cannot save.
+  const openSave = () => {
+    if (userSubscription.tier === "free") {
+      showToast("Saving palettes is a Pro feature. Go Pro to build your palette library.", "info");
+      setShowUpgradeModal(true);
+      return;
+    }
+    setSaveOpen(true);
+  };
+
   const handleSaveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!paletteName.trim()) return;
@@ -97,7 +108,7 @@ export const PaletteGenerator: React.FC = () => {
   // every other colour currently in the palette.
   const reSpinSingleColor = (index: number) => {
     respinColor(index);
-    showToast("Regenerated color slot", "info");
+    showToast("Swatch re-spun", "info");
   };
 
   const firstRowModes: HarmonyMode[] = ["analogous", "monochromatic", "complementary", "triadic"];
@@ -236,7 +247,7 @@ export const PaletteGenerator: React.FC = () => {
                         className={`flex flex-col items-center justify-center p-1 sm:p-0 transition-all cursor-pointer hover:scale-105 active:scale-95 ${
                           isDark ? "text-white/80 hover:text-white" : "text-slate-800/80 hover:text-slate-900"
                         }`}
-                        title="Remove this color column"
+                        title="Remove this swatch"
                       >
                         <X className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                         <span className={`hidden sm:block text-[7px] font-sans font-black uppercase tracking-widest mt-0.5 ${
@@ -463,12 +474,12 @@ export const PaletteGenerator: React.FC = () => {
 
           <div className="grid grid-flow-col auto-cols-fr gap-2">
             {currentColors.length < 10 && (
-              <button onClick={addColumn} className={mobileAction} style={{ color: "#2589BD", borderColor: "#2589BD" }} title="Add a color (up to 10)">
+              <button onClick={addColumn} className={mobileAction} style={{ color: "#2589BD", borderColor: "#2589BD" }} title="Add a color swatch (up to 10)">
                 <Plus className="w-5 h-5" />
-                <span>Add</span>
+                <span>Swatch</span>
               </button>
             )}
-            <button onClick={() => setSaveOpen(true)} className={`${mobileAction} border-slate-200 text-slate-700`} title="Save this palette to your account">
+            <button onClick={openSave} className={`${mobileAction} border-slate-200 text-slate-700`} title="Save this palette to your library (Pro)">
               <Save className="w-5 h-5 text-slate-500" />
               <span>Save</span>
             </button>
@@ -640,16 +651,16 @@ export const PaletteGenerator: React.FC = () => {
                 onClick={addColumn}
                 className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-5 bg-white border rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
                 style={{ color: "#2589BD", borderColor: "#2589BD" }}
-                title="Add a color column to your canvas (up to 10)"
+                title="Add a color swatch (up to 10)"
               >
                 <Plus className="w-3.5 h-3.5" style={{ color: "#2589BD" }} />
-                <span className="hidden sm:inline">Add Color</span>
+                <span className="hidden sm:inline">Add Swatch</span>
               </button>
             )}
 
             {/* Quick Save Trigger */}
             <button
-              onClick={() => setSaveOpen(true)}
+              onClick={openSave}
               className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
             >
               <Save className="w-3.5 h-3.5 text-slate-400" />
@@ -717,10 +728,10 @@ export const PaletteGenerator: React.FC = () => {
               className="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full relative z-10 border border-slate-250"
             >
               <h3 className="text-base font-display font-bold text-slate-900 mb-1">
-                Save Palette to Account
+                Save to your Palette Library
               </h3>
               <p className="text-xs text-slate-500 font-sans mb-4">
-                Name your color combo to preserve lock styles and assigned design roles permanently.
+                Name this palette. Its colors, roles and locks are saved with it.
               </p>
 
               <form onSubmit={handleSaveSubmit} className="space-y-4">

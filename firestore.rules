@@ -73,14 +73,6 @@ service cloud.firestore {
             && request.time < profile.premiumExpiresAt + duration.value(3, 'd'));
     }
 
-    // Free accounts get exactly two palette slots with fixed document IDs, so
-    // the 2-palette cap is enforced here and cannot be bypassed from the
-    // browser. Pro accounts may create palettes under any valid ID.
-    function isFreePaletteSlot(paletteId) {
-      return paletteId == request.auth.uid + '_slot1'
-        || paletteId == request.auth.uid + '_slot2';
-    }
-
     // On first profile creation the client may only ever start on the free tier
     // with no active subscription metadata.
     function isCleanFreeProfile(data) {
@@ -103,7 +95,7 @@ service cloud.firestore {
         && isOwner(incoming().userId)
         && isValidPalette(incoming())
         && incoming().createdAt == request.time
-        && (isFreePaletteSlot(paletteId) || hasProAccess());
+        && hasProAccess(); // saving is a Pro feature
 
       allow update: if isSignedIn()
         && isValidId(paletteId)
@@ -111,8 +103,10 @@ service cloud.firestore {
         && isOwner(incoming().userId)
         && isValidPalette(incoming())
         && incoming().createdAt == existing().createdAt
-        && incoming().updatedAt == request.time;
+        && incoming().updatedAt == request.time
+        && hasProAccess();
 
+      // A lapsed account can still read and delete what it saved.
       allow delete: if isSignedIn() 
         && isOwner(existing().userId);
     }

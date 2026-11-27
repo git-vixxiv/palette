@@ -206,6 +206,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // admin tooling (backend writes the tier through the Admin SDK). There is
     // intentionally no client-side tier override here.
     setLoadingSub(true);
+    // A signed-out visitor has no profile to read and is always on the free plan.
+    if (isFirebaseConfigured && auth?.currentUser?.uid !== uid) {
+      setUserSubscription({ tier: "free", updatedAt: new Date().toISOString() });
+      setLoadingSub(false);
+      setSubLoadedFor(uid);
+      return;
+    }
     if (isFirebaseConfigured && db) {
       try {
         const userRef = doc(db, "users", uid);
@@ -396,14 +403,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Add column adds color elements dynamically to the palette layout up to 10
   const addColumn = () => {
     if (userSubscription.tier === "free" && currentColors.length >= 5) {
-      showToast("Free tier is limited to 5 color columns. Upgrade to PRO to unlock up to 10!", "error");
+      showToast("The free plan includes up to 5 swatches. Go Pro for up to 10.", "error");
       setShowUpgradeModal(true);
       return;
     }
 
     setColors((prev) => {
       if (prev.length >= 10) {
-        showToast("Maximum of 10 color columns allowed", "error");
+        showToast("A palette can have up to 10 swatches", "error");
         return prev;
       }
       
@@ -422,7 +429,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...prev,
         { hex: newHex, role: chosenRole, locked: false }
       ];
-      showToast("Expanded palette block!", "success");
+      showToast("Swatch added", "success");
       return updated;
     });
   };
@@ -435,7 +442,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prev;
       }
       const updated = prev.filter((_, idx) => idx !== index);
-      showToast("Compressed palette column", "info");
+      showToast("Swatch removed", "info");
       return updated;
     });
   };
@@ -692,8 +699,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Add a Palette
   const saveCurrentPalette = async (name: string) => {
-    if (userSubscription.tier === "free" && savedPalettes.length >= 2) {
-      showToast("Free tier is limited to 2 saved palettes. Upgrade to PRO to save unlimited palettes!", "error");
+    // Saving to the library is a Pro feature (firestore.rules enforces it).
+    if (userSubscription.tier === "free") {
+      showToast("Saving palettes is a Pro feature. Go Pro to build your palette library.", "error");
       setShowUpgradeModal(true);
       return;
     }
@@ -724,21 +732,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         };
-        if (userSubscription.tier === "free") {
-          // Free accounts own two fixed document slots; firestore.rules
-          // rejects any other palette ID, which is what enforces the cap.
-          const taken = new Set(savedPalettes.map((p) => p.id));
-          const slotId = [`${userId}_slot1`, `${userId}_slot2`].find((id) => !taken.has(id));
-          if (!slotId) {
-            showToast("Free tier is limited to 2 saved palettes. Upgrade to PRO to save unlimited palettes!", "error");
-            setShowUpgradeModal(true);
-            return;
-          }
-          await setDoc(doc(db, qPath, slotId), paletteData);
-        } else {
-          await addDoc(collection(db, qPath), paletteData);
-        }
-        showToast("Palette saved directly to Firestore!", "success");
+        await addDoc(collection(db, qPath), paletteData);
+        showToast("Palette saved to your library", "success");
         await fetchPalettes();
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, qPath);
@@ -762,7 +757,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         localStorage.setItem("palette_generator_saved", JSON.stringify(newList));
         setSavedPalettes(newList);
-        showToast("Palette saved locally to your browser!", "success");
+        showToast("Palette saved to your library", "success");
       } catch (err) {
         console.error("Failed storing locally:", err);
         showToast("Saving failed", "error");

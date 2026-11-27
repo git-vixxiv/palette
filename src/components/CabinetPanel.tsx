@@ -4,19 +4,19 @@ import { Folder, Trash2, ArrowUpRight, HelpCircle, UserCheck } from "lucide-reac
 import { motion, AnimatePresence } from "motion/react";
 
 export const CabinetPanel: React.FC = () => {
-  const { savedPalettes, loadSavedPalette, deleteSavedPalette, loadingPalettes, user } = useApp();
+  const { savedPalettes, loadSavedPalette, deleteSavedPalette, loadingPalettes, user, userSubscription } = useApp();
 
   return (
-    <section className="w-full max-w-7xl mx-auto p-6 md:p-8" id="saved-cabinet">
+    <section className="w-full max-w-7xl mx-auto p-6 md:p-8" id="palette-library">
       
       {/* Title */}
       <div className="border-l-4 pl-4 space-y-1 mb-6 flex justify-between items-center" style={{ borderLeftColor: "#d1c69e" }}>
         <div>
           <h2 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-slate-800 flex items-center gap-2">
-            <span>Palette Design Vault</span>
+            <span>Palette Library</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 font-sans">
-            Retrieve your custom color compositions. {user ? `Signed in as ${user.displayName || "explorer"}` : "Guest local index preview."}
+            Your saved palettes, ready to reload.
           </p>
         </div>
       </div>
@@ -35,7 +35,9 @@ export const CabinetPanel: React.FC = () => {
             <Folder className="w-8 h-8 mx-auto text-slate-350 mb-2" />
             <p className="font-bold text-slate-700">No saved palettes yet</p>
             <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-              Assign roles, calibrate your locked shades above, and click &apos;Save Palette&apos; to archive your favorite combinations.
+              {userSubscription.tier === "free"
+                ? "Saving palettes is a Pro feature. Go Pro and every palette you save lands here."
+                : "Lock the colors you like, then use Save to keep a palette here."}
             </p>
           </motion.div>
         ) : (
