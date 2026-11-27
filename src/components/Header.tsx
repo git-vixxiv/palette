@@ -10,9 +10,9 @@ export const Header: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="flex items-center justify-between gap-3 px-4 sm:px-6 md:px-12 py-3 sm:py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
+    <header className="flex items-center justify-between gap-3 px-4 sm:px-6 md:px-8 xl:px-12 py-3 sm:py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
       {/* Brand Logo and Title */}
-      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 sm:shrink-0">
         <img src={logoUrl} alt="" width={40} height={40} className="w-10 h-10 shrink-0 object-contain" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -21,11 +21,11 @@ export const Header: React.FC = () => {
               <span className="text-xl font-display font-black tracking-tight text-slate-800 lowercase leading-none">palette</span>
               <span className="text-[11px] sm:text-xs font-bold font-sans lowercase leading-none mt-1 sm:mt-0" style={{ color: "#2589BD" }}>by vixxiv</span>
             </span>
-            <span className="text-[10px] uppercase font-mono font-bold tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm sm:inline-block hidden">
+            <span className="text-[10px] uppercase font-mono font-bold tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm whitespace-nowrap hidden xl:inline-block">
               Lab & Analyzer
             </span>
           </div>
-          <p className="text-[10px] text-slate-400 font-sans hidden md:block mt-0.5">
+          <p className="text-[10px] text-slate-400 font-sans hidden xl:block whitespace-nowrap mt-0.5">
             Color science engine, WCAG contrast matrix compliance, and AI optimization
           </p>
         </div>
@@ -33,7 +33,7 @@ export const Header: React.FC = () => {
 
       {/* User Actions */}
       <div className="flex items-center gap-3 sm:gap-6 shrink-0">
-        <nav className="hidden lg:flex items-center gap-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <nav className="hidden lg:flex items-center gap-4 xl:gap-5 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
           <a href="#visualize" className="hover:text-[#2589BD] transition-colors">In Action</a>
           <a href="#scoring-analytics" className="hover:text-[#2589BD] transition-colors">Theory & Analytics</a>
           <a href="#accessibility-analyzer" className="hover:text-[#2589BD] transition-colors">Contrast Matrix</a>
@@ -44,7 +44,7 @@ export const Header: React.FC = () => {
 
         <div className="flex items-center gap-2 sm:gap-4">
           {/* Connection badge status */}
-          <div className="text-right hidden sm:block">
+          <div className="text-right whitespace-nowrap hidden sm:block lg:hidden xl:block">
             <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">
               {isDbActive ? "● Cloud Vault" : "○ Local Vault"}
             </p>
