@@ -292,8 +292,24 @@ export const createSubscription = onCall(
         } catch {
           locationKnown = "lookup failed";
         }
+        // Which Square application issued our access token. A card collected
+        // by the web form under one application cannot be saved with another
+        // application's token. Application and merchant IDs are not secret.
+        let tokenApplication: string = "unchecked";
+        try {
+          const base = SQUARE_ENVIRONMENT.value() === "production" ? "https://connect.squareup.com" : "https://connect.squareupsandbox.com";
+          const r = await fetch(`${base}/oauth2/token/status`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${SQUARE_ACCESS_TOKEN.value()}`, "Content-Type": "application/json" },
+          });
+          const j: any = await r.json();
+          tokenApplication = j?.client_id ? `${j.client_id} (merchant ${j.merchant_id})` : `status ${r.status}`;
+        } catch {
+          tokenApplication = "lookup failed";
+        }
         logger.error("Square API error", {
           uid,
+          tokenApplication,
           plan,
           request: err?.request?.url ? String(err.request.url) : undefined,
           statusCode: err?.statusCode,
