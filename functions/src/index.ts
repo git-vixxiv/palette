@@ -281,7 +281,25 @@ export const createSubscription = onCall(
       // Surface Square API validation errors cleanly to the client.
       const squareErrors = err?.result?.errors ?? err?.errors;
       if (squareErrors?.length) {
-        logger.error("Square API error", { uid, plan, errors: squareErrors });
+        // Square's error objects do not serialise as-is, so log plain fields.
+        // Also record whether the configured location belongs to the account
+        // behind our access token: a mismatch there is a setup fault, and it
+        // otherwise looks like a card problem.
+        let locationKnown: boolean | string = "unchecked";
+        try {
+          const locs = await client.locationsApi.listLocations();
+          locationKnown = (locs.result.locations ?? []).some((l) => l.id === SQUARE_LOCATION_ID.value());
+        } catch {
+          locationKnown = "lookup failed";
+        }
+        logger.error("Square API error", {
+          uid,
+          plan,
+          request: err?.request?.url ? String(err.request.url) : undefined,
+          statusCode: err?.statusCode,
+          locationBelongsToTokenAccount: locationKnown,
+          errors: squareErrors.map((x: any) => ({ category: x.category, code: x.code, detail: x.detail, field: x.field })),
+        });
         const e = squareErrors[0];
         // Square refusing our own credentials is not something the customer
         // can fix; the client shows its "unavailable on our side" message.
