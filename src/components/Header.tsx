@@ -3,6 +3,7 @@ import { useApp } from "../context/AppContext";
 import { Palette, LogIn, LogOut, ChevronDown, CheckCircle, Database, Sparkles, Star, Award } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { AuthModal } from "./AuthModal";
+import logoUrl from "../assets/logo.webp";
 
 export const Header: React.FC = () => {
   const { user, logout, isDbActive, savedPalettes, userSubscription, setShowUpgradeModal, cancelSubscription, authPrompt, openAuth, closeAuth } = useApp();
@@ -12,9 +13,7 @@ export const Header: React.FC = () => {
     <header className="flex items-center justify-between gap-3 px-4 sm:px-6 md:px-12 py-3 sm:py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
       {/* Brand Logo and Title */}
       <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "#2589BD" }}>
-          <div className="w-4 h-4 border-2 border-white rounded-full"></div>
-        </div>
+        <img src={logoUrl} alt="" width={40} height={40} className="w-10 h-10 shrink-0 object-contain" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {/* Lockup: stacked beside the mark on phones, one line from sm up. Never wraps. */}
