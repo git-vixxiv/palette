@@ -8,7 +8,7 @@ export const ContrastMatrix: React.FC = () => {
   const { currentColors, showToast } = useApp();
   
   // Sandbox state
-  const [sandboxText, setSandboxText] = useState("We build digital products that feel premium, clean, and highly accessible.");
+  const [sandboxText, setSandboxText] = useState("Palette by vixxiv is a very useful free tool, and the Pro upgrade is a great value!");
   const [textIndex, setTextIndex] = useState(0); // Default to color 1 (index 0)
   const [bgIndex, setBgIndex] = useState(3); // Default to light neutral index 3
   const [textSize, setTextSize] = useState<"small" | "large">("small");
@@ -195,10 +195,10 @@ export const ContrastMatrix: React.FC = () => {
           <div className="space-y-1">
             <h3 className="text-xs font-sans font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
               <Eye className="w-4 h-4" style={{ color: "#2589BD" }} />
-              Interactive Pairing Sandbox
+              Palette Contrast Checker
             </h3>
             <p className="text-xs text-slate-500 font-sans">
-              Interactively design customized typographical nodes using any pairing combination from your palette.
+              Select a text and background color from your palette to check readability, or edit the sample text below.
             </p>
           </div>
 
@@ -207,7 +207,7 @@ export const ContrastMatrix: React.FC = () => {
             {/* Text pick */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                Text Shade
+                Text Color
               </label>
               <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-150 rounded">
                 {colors.map((c, i) => (
@@ -227,7 +227,7 @@ export const ContrastMatrix: React.FC = () => {
             {/* Background pick */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                Canvas Shade
+                Background Color
               </label>
               <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-150 rounded">
                 {colors.map((c, i) => (
