@@ -71,6 +71,8 @@ const PLAN_UNIT: Record<Plan, string> = { monthly: "/mo", annual: "/yr", lifetim
  *   promoCodes/{CODE}: { kind: "percent" | "fixed", percentOff?, fixedCents?:
  *   { monthly?, annual?, lifetime? }, plans: Plan[], duration: "first" |
  *   "forever", maxRedemptions?, redeemed, expiresAt?, active, note }
+ *   kind "comp" is a free pass: { compKind: "lifetime" | "until", compUntil? }.
+ *   It is redeemed without a card and never touches Square.
  *   promoCodes/{CODE}/redemptions/{uid}: one per account.
  * Only Cloud Functions read or write these (firestore.rules denies clients).
  * ----------------------------------------------------------------------- */
@@ -83,6 +85,8 @@ interface PromoQuote {
   priceCents: number;
   fullCents: number;
   duration: "first" | "forever";
+  /** Set for a complimentary code: no payment, Pro is granted directly. */
+  comp?: { kind: "lifetime" | "until"; until: number | null };
 }
 
 const cleanCode = (raw: unknown) => String(raw ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
@@ -98,9 +102,14 @@ async function quotePromo(rawCode: unknown, plan: Plan, uid: string): Promise<Pr
   if (d.expiresAt && d.expiresAt.toMillis() < Date.now()) throw new HttpsError("failed-precondition", "That promo code has expired.");
   if (d.maxRedemptions && (d.redeemed ?? 0) >= d.maxRedemptions) throw new HttpsError("failed-precondition", "That promo code has been fully used.");
   if (used.exists) throw new HttpsError("failed-precondition", "You've already used that promo code.");
+  const fullCents = listPriceCents(plan);
+  if (d.kind === "comp") {
+    const until = d.compKind === "lifetime" ? null : d.compUntil?.toMillis?.() ?? 0;
+    if (until !== null && until < Date.now()) throw new HttpsError("failed-precondition", "That promo code has expired.");
+    return { code, priceCents: 0, fullCents, duration: "forever", comp: { kind: d.compKind === "lifetime" ? "lifetime" : "until", until } };
+  }
   if (Array.isArray(d.plans) && !d.plans.includes(plan)) throw new HttpsError("failed-precondition", `That promo code doesn't apply to the ${plan} plan.`);
 
-  const fullCents = listPriceCents(plan);
   let priceCents: number;
   if (d.kind === "fixed") {
     priceCents = Number(d.fixedCents?.[plan]);
@@ -213,6 +222,9 @@ export const createSubscription = onCall(
 
     // A promo code is checked before anything is charged; a bad code stops here.
     const promo: PromoQuote | null = promoInput ? await quotePromo(promoInput, plan, uid) : null;
+    if (promo?.comp) {
+      throw new HttpsError("failed-precondition", "That code is a complimentary pass. Redeem it without a card.");
+    }
 
     // 2. Refuse duplicate purchases and take a short checkout lock, atomically.
     //    - Lifetime owners have nothing left to buy.
@@ -842,6 +854,8 @@ async function adminListPromos() {
       kind: p.kind,
       percentOff: p.percentOff ?? null,
       fixedCents: p.fixedCents ?? null,
+      compKind: p.compKind ?? null,
+      compUntil: millis(p.compUntil),
       plans: p.plans ?? [],
       duration: p.duration,
       maxRedemptions: p.maxRedemptions ?? null,
@@ -859,7 +873,10 @@ async function adminListPromos() {
 async function adminCreatePromo(data: any, adminEmail: string) {
   const code = cleanCode(data?.code);
   if (code.length < 3) throw new HttpsError("invalid-argument", "A code needs at least 3 letters or numbers.");
-  const plans: Plan[] = (Array.isArray(data?.plans) ? data.plans : []).filter((x: any) => ["monthly", "annual", "lifetime"].includes(x));
+  const isComp = data?.kind === "comp";
+  const plans: Plan[] = isComp
+    ? ["monthly", "annual", "lifetime"]
+    : (Array.isArray(data?.plans) ? data.plans : []).filter((x: any) => ["monthly", "annual", "lifetime"].includes(x));
   if (!plans.length) throw new HttpsError("invalid-argument", "Choose at least one plan.");
   const duration = data?.duration === "first" ? "first" : "forever";
   const doc: Record<string, any> = {
@@ -871,7 +888,15 @@ async function adminCreatePromo(data: any, adminEmail: string) {
     createdBy: adminEmail,
     createdAt: FieldValue.serverTimestamp(),
   };
-  if (data?.kind === "fixed") {
+  if (isComp) {
+    doc.kind = "comp";
+    doc.compKind = data?.compKind === "lifetime" ? "lifetime" : "until";
+    if (doc.compKind === "until") {
+      const t = Date.parse(`${String(data?.compUntil ?? "").slice(0, 10)}T23:59:59Z`);
+      if (!Number.isFinite(t) || t < Date.now()) throw new HttpsError("invalid-argument", "Pick a future date for the complimentary access to end.");
+      doc.compUntil = Timestamp.fromMillis(t);
+    }
+  } else if (data?.kind === "fixed") {
     const fixedCents: Record<string, number> = {};
     for (const plan of plans) {
       const cents = Math.round(Number(data?.fixedCents?.[plan]));
@@ -903,6 +928,89 @@ async function adminCreatePromo(data: any, adminEmail: string) {
   return { ok: true, code };
 }
 
+/**
+ * Why this account cannot take a comp of this kind, or null if it can.
+ * A comp never replaces something the customer paid for, except that a
+ * lifetime comp supersedes a monthly/annual subscription (which is cancelled).
+ */
+function compBlocker(prev: FirebaseFirestore.DocumentData, kind: "lifetime" | "until"): string | null {
+  const paying = !prev.comp && (prev.tier === "pro-lifetime" || hasLiveRecurring(prev));
+  if (prev.tier === "pro-lifetime" && !prev.comp) return "This account already has lifetime Pro.";
+  if (prev.tier === "pro-lifetime" && prev.comp && kind === "until") return "This account already has complimentary lifetime Pro.";
+  if (kind === "until" && paying) return "This account has a paid subscription. It has to end before a complimentary period can start.";
+  return null;
+}
+
+/** The profile fields that make an account a comp. */
+function compFields(uid: string, email: string, kind: "lifetime" | "until", until: Date | null, by: string) {
+  return {
+    userId: uid,
+    email,
+    tier: kind === "lifetime" ? "pro-lifetime" : "pro-annual",
+    comp: true,
+    compBy: by,
+    compAt: FieldValue.serverTimestamp(),
+    // No Square subscription sits behind a comp, so webhooks never touch it.
+    subscriptionId: "",
+    // "canceling" makes the app show an end date and no cancel button.
+    subscriptionStatus: kind === "lifetime" ? "active" : "canceling",
+    pricingPlan: kind === "lifetime" ? "Complimentary lifetime" : "Complimentary Pro",
+    ...expiryFields(kind === "lifetime" ? expiryForPlan("lifetime") : (until as Date)),
+    promoRevertPending: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+/** A lifetime comp replaces a paid subscription: stop it renewing first. */
+async function cancelPaidSubscriptionForComp(prev: FirebaseFirestore.DocumentData, uid: string) {
+  if (!prev.comp && hasLiveRecurring(prev) && prev.subscriptionId && prev.subscriptionStatus !== "canceling") {
+    try {
+      await squareClient().subscriptionsApi.cancelSubscription(prev.subscriptionId);
+    } catch (e: any) {
+      logger.error("Comp: could not cancel paid subscription", { uid, message: e?.message });
+      throw new HttpsError("internal", "The existing paid subscription could not be cancelled, so the complimentary access was not applied.");
+    }
+  }
+}
+
+/**
+ * Callable: redeem a complimentary promo code. No card and no Square call
+ * (other than cancelling a subscription a lifetime pass replaces).
+ */
+export const redeemCompCode = onCall(
+  { region: "us-central1", secrets: [SQUARE_ACCESS_TOKEN], cors: true },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "You must be signed in.");
+    const uid = request.auth.uid;
+    const email = request.auth.token.email ?? "";
+    const quote = await quotePromo(request.data?.code, "annual", uid);
+    if (!quote.comp) throw new HttpsError("failed-precondition", "That code is a discount. Use it at checkout.");
+    const { kind, until } = quote.comp;
+
+    const userRef = db.collection("users").doc(uid);
+    const blocked = compBlocker((await userRef.get()).data() ?? {}, kind);
+    if (blocked) throw new HttpsError("failed-precondition", blocked);
+    await cancelPaidSubscriptionForComp((await userRef.get()).data() ?? {}, uid);
+
+    // Count the use and grant access together, so a limited code can never
+    // be redeemed more times than its limit, or twice by one account.
+    const promoRef = db.collection("promoCodes").doc(quote.code);
+    const useRef = promoRef.collection("redemptions").doc(uid);
+    await db.runTransaction(async (tx) => {
+      const [promoSnap, useSnap] = await Promise.all([tx.get(promoRef), tx.get(useRef)]);
+      const d = promoSnap.data() ?? {};
+      if (!promoSnap.exists || d.active === false) throw new HttpsError("not-found", "That promo code isn't valid.");
+      if (useSnap.exists) throw new HttpsError("failed-precondition", "You've already used that promo code.");
+      if (d.maxRedemptions && (d.redeemed ?? 0) >= d.maxRedemptions) throw new HttpsError("failed-precondition", "That promo code has been fully used.");
+      tx.set(promoRef, { redeemed: FieldValue.increment(1) }, { merge: true });
+      tx.set(useRef, { uid, email, plan: kind === "lifetime" ? "comp-lifetime" : "comp-until", priceCents: 0, at: FieldValue.serverTimestamp() });
+      tx.set(userRef, { ...compFields(uid, email, kind, until ? new Date(until) : null, `code ${quote.code}`), promoCode: quote.code }, { merge: true });
+    });
+    logger.info("Comp code redeemed", { uid, code: quote.code, kind });
+    return { success: true, kind, until };
+  }
+);
+
 async function adminGrantComp(data: any, adminEmail: string) {
   const email = String(data?.email ?? "").trim().toLowerCase();
   if (!email) throw new HttpsError("invalid-argument", "Enter the account's email.");
@@ -915,46 +1023,16 @@ async function adminGrantComp(data: any, adminEmail: string) {
   const ref = db.collection("users").doc(target.uid);
   const prev = (await ref.get()).data() ?? {};
   const kind = data?.kind === "lifetime" ? "lifetime" : "until";
-  const paying = !prev.comp && (prev.tier === "pro-lifetime" || hasLiveRecurring(prev));
-
-  if (prev.tier === "pro-lifetime" && !prev.comp) throw new HttpsError("failed-precondition", "That account already bought lifetime Pro.");
-  if (kind === "until" && paying) throw new HttpsError("failed-precondition", "That account has a paid subscription. Cancel it first, or issue a lifetime comp.");
+  const blocked = compBlocker(prev, kind);
+  if (blocked) throw new HttpsError("failed-precondition", blocked);
 
   let until: Date | null = null;
   if (kind === "until") {
     until = new Date(`${String(data?.until ?? "").slice(0, 10)}T23:59:59Z`);
     if (Number.isNaN(until.getTime()) || until.getTime() < Date.now()) throw new HttpsError("invalid-argument", "Pick an end date in the future.");
   }
-
-  // A lifetime comp replaces a paid subscription: stop it renewing.
-  if (kind === "lifetime" && paying && prev.subscriptionId && prev.subscriptionStatus !== "canceling") {
-    try {
-      await squareClient().subscriptionsApi.cancelSubscription(prev.subscriptionId);
-    } catch (e: any) {
-      logger.error("Comp: could not cancel paid subscription", { uid: target.uid, message: e?.message });
-      throw new HttpsError("internal", "Could not cancel their paid subscription in Square, so the comp was not issued.");
-    }
-  }
-
-  await ref.set(
-    {
-      userId: target.uid,
-      email,
-      tier: kind === "lifetime" ? "pro-lifetime" : "pro-annual",
-      comp: true,
-      compBy: adminEmail,
-      compAt: FieldValue.serverTimestamp(),
-      // No Square subscription sits behind a comp, so webhooks never touch it.
-      subscriptionId: "",
-      // "canceling" makes the app show an end date and no cancel button.
-      subscriptionStatus: kind === "lifetime" ? "active" : "canceling",
-      pricingPlan: kind === "lifetime" ? "Complimentary lifetime" : "Complimentary Pro",
-      ...expiryFields(kind === "lifetime" ? expiryForPlan("lifetime") : (until as Date)),
-      promoRevertPending: FieldValue.delete(),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  await cancelPaidSubscriptionForComp(prev, target.uid);
+  await ref.set(compFields(target.uid, email, kind, until, adminEmail), { merge: true });
   logger.info("Comp granted", { uid: target.uid, kind, by: adminEmail });
   return { ok: true };
 }

@@ -26,6 +26,7 @@ export const UpgradeModal: React.FC = () => {
     purchasePro,
     userSubscription,
     cancelSubscription,
+    refreshSubscription,
     user,
   } = useApp();
 
@@ -36,7 +37,7 @@ export const UpgradeModal: React.FC = () => {
   // Promo code: what the visitor typed, and the server's answer for the chosen plan.
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoInput, setPromoInput] = useState("");
-  const [promo, setPromo] = useState<null | { code: string; plan: string; priceCents: number; fullCents: number; duration: "first" | "forever" }>(null);
+  const [promo, setPromo] = useState<null | { code: string; plan: string; priceCents: number; fullCents: number; duration: "first" | "forever"; comp?: { kind: "lifetime" | "until"; until: number | null } }>(null);
   const [promoError, setPromoError] = useState("");
   const [promoBusy, setPromoBusy] = useState(false);
 
@@ -54,10 +55,33 @@ export const UpgradeModal: React.FC = () => {
       setPromoBusy(false);
     }
   };
+  // A complimentary code is redeemed here, with no card and no payment.
+  const redeemComp = async () => {
+    if (!promo?.comp || !functions) return;
+    setIsSubmitting(true);
+    setFormError("");
+    try {
+      await httpsCallable(functions, "redeemCompCode")({ code: promo.code });
+      await refreshSubscription();
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        setShowUpgradeModal(false);
+        setPromo(null);
+        setPromoInput("");
+      }, 2200);
+    } catch (err: any) {
+      const raw = String(err?.message || "");
+      setFormError(/^(internal|unavailable|deadline-exceeded)$/i.test(raw.trim()) ? "We couldn't apply that code just now. Please try again." : raw || "That code could not be applied.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // A code is priced per plan, so re-check it whenever the plan changes.
   const choosePlan = (plan: "monthly" | "annual" | "lifetime") => {
     setBillingPlan(plan);
-    if (promo) {
+    if (promo && !promo.comp) {
       setPromo(null);
       applyPromo(plan, promo.code);
     }
@@ -128,7 +152,8 @@ export const UpgradeModal: React.FC = () => {
     intervalText = "lifetime (one-time charge)";
   }
   // With a valid code for this plan, the amount charged today changes.
-  const promoOn = promo && promo.plan === billingPlan ? promo : null;
+  const compOn = promo?.comp ? promo : null;
+  const promoOn = promo && !promo.comp && promo.plan === billingPlan ? promo : null;
   const fmt = (cents: number) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
   const fullPriceText = priceText;
   if (promoOn) priceText = fmt(promoOn.priceCents);
@@ -306,12 +331,12 @@ export const UpgradeModal: React.FC = () => {
                 className="flex-1 flex flex-col justify-between"
               >
                 <div>
-                  <h4 className="text-sm font-sans font-extrabold tracking-tight uppercase text-slate-400 mb-4 text-left">
+                  <h4 className={`text-sm font-sans font-extrabold tracking-tight uppercase text-slate-400 mb-4 text-left ${compOn ? "hidden" : ""}`}>
                     Select Your Premium Duration:
                   </h4>
 
                   {/* Plan selector */}
-                  <div className="grid grid-cols-3 gap-2 p-1 bg-slate-200/60 rounded-lg mb-6">
+                  <div className={`grid grid-cols-3 gap-2 p-1 bg-slate-200/60 rounded-lg mb-6 ${compOn ? "hidden" : ""}`}>
                     <button
                       type="button"
                       onClick={() => choosePlan("monthly")}
@@ -339,7 +364,7 @@ export const UpgradeModal: React.FC = () => {
                   </div>
 
                   {/* Price summary */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs mb-6 text-left">
+                  <div className={`bg-white border border-slate-200 rounded-xl p-4 shadow-2xs mb-6 text-left ${compOn ? "hidden" : ""}`}>
                     <p className="text-[10px] text-slate-400 uppercase font-sans font-bold tracking-wider">
                       {billingPlan === "lifetime" ? "One-time price" : "Recurring price"}
                     </p>
@@ -365,8 +390,30 @@ export const UpgradeModal: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Complimentary code: no card, no payment */}
+                  {compOn && (
+                    <div className="mb-5 text-left rounded-xl border border-amber-300 bg-amber-50 p-4">
+                      <p className="text-sm font-bold text-slate-900">Code {compOn.code}: complimentary Pro</p>
+                      <p className="text-xs text-slate-700 mt-1">
+                        {compOn.comp!.kind === "lifetime"
+                          ? "This code gives your account lifetime Pro."
+                          : `This code gives your account Pro until ${new Date(compOn.comp!.until || 0).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}.`}{" "}
+                        No card needed and nothing will be charged.
+                      </p>
+                      {formError && <p className="text-xs text-rose-600 mt-2">{formError}</p>}
+                      <div className="flex flex-wrap items-center gap-3 mt-3">
+                        <button type="button" onClick={redeemComp} disabled={isSubmitting} className="h-10 px-4 rounded-md text-white text-xs font-extrabold uppercase tracking-wider cursor-pointer hover:brightness-110 disabled:opacity-60" style={{ backgroundColor: "#7F345F" }}>
+                          {isSubmitting ? "Activating…" : "Activate Pro"}
+                        </button>
+                        <button type="button" onClick={() => { setPromo(null); setPromoInput(""); setFormError(""); }} className="text-xs underline text-slate-500 cursor-pointer">
+                          Use a different code
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Promo code */}
-                  <div className="mb-5 text-left -mt-3">
+                  <div className={`mb-5 text-left -mt-3 ${compOn ? "hidden" : ""}`}>
                     {promoOn ? (
                       <p className="text-xs text-emerald-700 font-sans font-semibold">
                         Code {promoOn.code} applied.{" "}
@@ -397,7 +444,7 @@ export const UpgradeModal: React.FC = () => {
                   </div>
 
                   {/* Checkout */}
-                  <form onSubmit={handleCheckout} className="space-y-4 text-left">
+                  <form onSubmit={handleCheckout} className={`space-y-4 text-left ${compOn ? "hidden" : ""}`}>
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-2">
                       <h5 className="text-[10px] uppercase tracking-wider font-mono font-bold text-slate-500 flex items-center gap-1.5">
                         <CreditCard className="w-3.5 h-3.5 text-[#3e8e41]" />

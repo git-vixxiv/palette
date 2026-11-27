@@ -243,7 +243,9 @@ const UsersTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload })
 /* ---------------------------- Promo codes ----------------------------- */
 const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }) => {
   const [code, setCode] = useState("");
-  const [kind, setKind] = useState<"percent" | "fixed">("percent");
+  const [kind, setKind] = useState<"percent" | "fixed" | "comp">("percent");
+  const [compKind, setCompKind] = useState<"lifetime" | "until">("until");
+  const [compUntil, setCompUntil] = useState("");
   const [percentOff, setPercentOff] = useState("20");
   const [plans, setPlans] = useState<Plan[]>(["monthly", "annual", "lifetime"]);
   const [fixed, setFixed] = useState<Record<Plan, string>>({ monthly: "", annual: "", lifetime: "" });
@@ -263,7 +265,7 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
     try {
       const fixedCents: Record<string, number> = {};
       plans.forEach((p) => (fixedCents[p] = Math.round(parseFloat(fixed[p]) * 100)));
-      const res = await api("createPromo", { code, kind, percentOff: Number(percentOff), fixedCents, plans, duration, maxRedemptions: Number(maxRedemptions) || null, expiresAt: expiresAt || null, note });
+      const res = await api("createPromo", { code, kind, compKind, compUntil, percentOff: Number(percentOff), fixedCents, plans, duration, maxRedemptions: Number(maxRedemptions) || null, expiresAt: expiresAt || null, note });
       setMsg({ kind: "ok", text: `Code ${res.code} is live.` });
       setCode("");
       setNote("");
@@ -283,7 +285,9 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
     }
   };
   const describe = (p: any) =>
-    p.kind === "percent"
+    p.kind === "comp"
+      ? `Free Pro, ${p.compKind === "lifetime" ? "lifetime" : `until ${day(p.compUntil)}`}`
+      : p.kind === "percent"
       ? `${p.percentOff}% off`
       : PLANS.filter((x) => p.fixedCents?.[x] != null).map((x) => `${x} ${money(p.fixedCents[x])}`).join(", ");
 
@@ -301,18 +305,40 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
             <select className={input} value={kind} onChange={(e) => setKind(e.target.value as any)}>
               <option value="percent">Percentage off</option>
               <option value="fixed">Special fixed price</option>
+              <option value="comp">Complimentary Pro (100% off, no card)</option>
             </select>
           </div>
-          <div>
-            <label className={label}>Applies to subscriptions for</label>
-            <select className={input} value={duration} onChange={(e) => setDuration(e.target.value as any)}>
-              <option value="first">The first payment only</option>
-              <option value="forever">Every renewal</option>
-            </select>
-          </div>
+          {kind === "comp" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Gives</label>
+                <select className={input} value={compKind} onChange={(e) => setCompKind(e.target.value as any)}>
+                  <option value="until">Pro until a date</option>
+                  <option value="lifetime">Lifetime Pro</option>
+                </select>
+              </div>
+              <div>
+                <label className={label}>Access ends on</label>
+                <input className={input} type="date" required={compKind === "until"} disabled={compKind === "lifetime"} value={compUntil} onChange={(e) => setCompUntil(e.target.value)} />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className={label}>Applies to subscriptions for</label>
+              <select className={input} value={duration} onChange={(e) => setDuration(e.target.value as any)}>
+                <option value="first">The first payment only</option>
+                <option value="forever">Every renewal</option>
+              </select>
+            </div>
+          )}
         </div>
+        {kind === "comp" && (
+          <p className="text-xs text-slate-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            Anyone who enters this code gets Pro for free, with no card and no charge. Set a maximum number of uses below unless you mean it to be open to everyone who has the code.
+          </p>
+        )}
 
-        <div>
+        <div className={kind === "comp" ? "hidden" : ""}>
           <label className={label}>Plans this code works on{kind === "fixed" ? ", and the price for each" : ""}</label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {PLANS.map((p) => (
@@ -344,7 +370,7 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
             <input className={input} type="number" min="1" value={maxRedemptions} onChange={(e) => setMax(e.target.value)} />
           </div>
           <div>
-            <label className={label}>Expires (blank = never)</label>
+            <label className={label}>Code stops working (blank = never)</label>
             <input className={input} type="date" value={expiresAt} onChange={(e) => setExpires(e.target.value)} />
           </div>
           <div className={kind === "percent" ? "" : "md:col-span-2"}>
@@ -369,8 +395,8 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
               <tr key={p.code} className={p.active ? "" : "opacity-50"}>
                 <td className={`${td} font-mono font-bold text-slate-900`}>{p.code}</td>
                 <td className={td}>{describe(p)}</td>
-                <td className={td}>{p.plans.join(", ")}</td>
-                <td className={td}>{p.duration === "first" ? "First payment" : "Every renewal"}</td>
+                <td className={td}>{p.kind === "comp" ? "—" : p.plans.join(", ")}</td>
+                <td className={td}>{p.kind === "comp" ? "No payment" : p.duration === "first" ? "First payment" : "Every renewal"}</td>
                 <td className={td}>{p.redeemed}{p.maxRedemptions ? ` of ${p.maxRedemptions}` : ""}</td>
                 <td className={td}>{p.expiresAt ? day(p.expiresAt) : "Never"}</td>
                 <td className={`${td} max-w-[220px] truncate`}>{p.note || "—"}</td>
