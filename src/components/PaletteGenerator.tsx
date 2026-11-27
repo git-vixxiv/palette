@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
-import { Lock, Unlock, Copy, Check, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Sparkles, FolderPlus, Eye, RotateCcw, RotateCw, Plus, X, Star, Sun, Moon, Download } from "lucide-react";
+import { Lock, Unlock, Copy, Check, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Save, Share, Eye, RotateCcw, RotateCw, Plus, X, Star, Sun, Moon } from "lucide-react";
 import { getLuminance, hexToRgb, getColorName } from "../utils/colorUtils";
 import { getSingleColorScore } from "../utils/paletteEngine";
 import { ExportModal } from "./ExportModal";
@@ -102,6 +102,11 @@ export const PaletteGenerator: React.FC = () => {
 
   const firstRowModes: HarmonyMode[] = ["analogous", "monochromatic", "complementary", "triadic"];
   const secondRowModes: HarmonyMode[] = ["tetradic", "split", "random"];
+  // Harmony rules a free account cannot select (enforced in AppContext).
+  const proModes: HarmonyMode[] = ["analogous", "complementary", "triadic", "tetradic", "split"];
+  // Phone action tile: icon above a word, all the same size.
+  const mobileAction =
+    "h-14 rounded-lg border bg-white flex flex-col items-center justify-center gap-1 text-[10px] font-sans font-extrabold uppercase tracking-wider cursor-pointer shadow-3xs active:scale-95 transition-all touch-manipulation";
 
   // Scale the hex readout to the number of columns so a full 7-char hex always
   // fits inside the card (more columns = narrower cards = smaller text/width).
@@ -189,13 +194,12 @@ export const PaletteGenerator: React.FC = () => {
       </div>
       
       {/* Dynamic Flex Palette Board - Responsive dual grid-to-flex layout */}
+      {/* Phones: at most three cards across (two for 2 or 4 colors), in rows
+          of a fixed height, so every card keeps tappable controls. From sm up
+          the cards sit in one row. */}
       <div className={`w-full max-w-7xl grid ${
-        currentColors.length <= 4 
-          ? currentColors.length === 2 ? "grid-cols-2" : currentColors.length === 3 ? "grid-cols-3" : "grid-cols-4"
-          : currentColors.length <= 6 ? "grid-cols-3" : currentColors.length <= 8 ? "grid-cols-4" : "grid-cols-5"
-      } auto-rows-fr sm:flex sm:flex-row gap-2 sm:gap-4 ${
-        currentColors.length <= 4 ? "h-[210px]" : "h-[428px]"
-      } sm:h-[520px] px-1 sm:px-0`}>
+        currentColors.length === 2 || currentColors.length === 4 ? "grid-cols-2" : "grid-cols-3"
+      } auto-rows-[204px] sm:flex sm:flex-row gap-2 sm:gap-4 sm:h-[520px] px-1 sm:px-0`}>
         {currentColors.map((color, idx) => {
           let isDark = true;
           try {
@@ -229,12 +233,12 @@ export const PaletteGenerator: React.FC = () => {
                     {currentColors.length > 2 ? (
                       <button
                         onClick={() => removeColumn(idx)}
-                        className={`flex flex-col items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                        className={`flex flex-col items-center justify-center p-1 sm:p-0 transition-all cursor-pointer hover:scale-105 active:scale-95 ${
                           isDark ? "text-white/80 hover:text-white" : "text-slate-800/80 hover:text-slate-900"
                         }`}
                         title="Remove this color column"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                         <span className={`hidden sm:block text-[7px] font-sans font-black uppercase tracking-widest mt-0.5 ${
                           isDark ? "text-white/60" : "text-slate-550"
                         }`}>
@@ -283,12 +287,12 @@ export const PaletteGenerator: React.FC = () => {
                   <div className="flex-1 flex justify-end">
                     <button
                       onClick={() => reSpinSingleColor(idx)}
-                      className={`flex flex-col items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                      className={`flex flex-col items-center justify-center p-1 sm:p-0 transition-all cursor-pointer hover:scale-105 active:scale-95 ${
                         isDark ? "text-white/80 hover:text-white" : "text-slate-800/80 hover:text-slate-900"
                       }`}
                       title="Re-spin just this slot"
                     >
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" />
+                      <RefreshCw className="w-4 h-4 sm:w-3.5 sm:h-3.5 animate-spin-hover" />
                       <span className={`hidden sm:block text-[7px] font-sans font-black uppercase tracking-widest mt-0.5 ${
                         isDark ? "text-white/60" : "text-slate-550"
                       }`}>
@@ -300,28 +304,28 @@ export const PaletteGenerator: React.FC = () => {
 
                 {/* Line 2 (Mobile only): shift color left right feature icons (< >) centered on the line below the x icon */}
                 <div className="flex sm:hidden justify-center items-center w-full mt-1">
-                  <div className={`flex items-center justify-center space-x-2 px-1.5 py-0.5 rounded-full border shrink-0 ${
+                  <div className={`flex items-center justify-center space-x-3 px-2 py-0.5 rounded-full border shrink-0 ${
                     isDark ? "bg-white/10 border-white/10" : "bg-black/5 border-black/5"
                   }`}>
                     <button
                       disabled={idx === 0}
                       onClick={() => shiftColor(idx, "left")}
-                      className={`p-0.5 disabled:opacity-20 transition-all cursor-pointer rounded-full ${
+                      className={`p-1 disabled:opacity-20 transition-all cursor-pointer rounded-full ${
                         isDark ? "text-white/80 hover:bg-white/20" : "text-slate-800/80 hover:bg-black/10"
                       }`}
                       title="Move left"
                     >
-                      <ChevronLeft className="w-3 h-3" />
+                      <ChevronLeft className="w-4 h-4" />
                     </button>
                     <button
                       disabled={idx === currentColors.length - 1}
                       onClick={() => shiftColor(idx, "right")}
-                      className={`p-0.5 disabled:opacity-20 transition-all cursor-pointer rounded-full ${
+                      className={`p-1 disabled:opacity-20 transition-all cursor-pointer rounded-full ${
                         isDark ? "text-white/80 hover:bg-white/20" : "text-slate-800/80 hover:bg-black/10"
                       }`}
                       title="Move right"
                     >
-                      <ChevronRight className="w-3 h-3" />
+                      <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -340,25 +344,25 @@ export const PaletteGenerator: React.FC = () => {
                     value={color.hex}
                     maxLength={7}
                     onChange={(e) => handleManualHexChange(idx, e.target.value)}
-                    className={`font-mono text-[10px] ${hexFont} font-bold w-13 ${hexWidth} text-center border-b ${borderStyle} focus:border-indigo-400 focus:outline-hidden py-0.5 tracking-wider uppercase transition-colors ${labelColor}`}
+                    className={`font-mono text-[12px] ${hexFont} font-bold w-[66px] ${hexWidth} text-center border-b ${borderStyle} focus:border-indigo-400 focus:outline-hidden py-0.5 tracking-wider uppercase transition-colors ${labelColor}`}
                   />
                   <button
                     onClick={() => handleCopy(color.hex, idx)}
-                    className={`p-0.5 sm:p-1.5 rounded-md hover:scale-115 active:scale-95 transition-all text-xs cursor-pointer ${
+                    className={`p-1 sm:p-1.5 rounded-md hover:scale-115 active:scale-95 transition-all text-xs cursor-pointer ${
                       isDark ? "hover:bg-white/20 text-white/80" : "hover:bg-black/10 text-slate-800"
                     }`}
                     title="Copy hex code"
                   >
-                    {copiedIndex === idx ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    {copiedIndex === idx ? <Check className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 sm:w-3 sm:h-3" />}
                   </button>
                 </div>
 
                 {/* Unified Role Badge Selector */}
-                <div className="relative w-full max-w-[56px] sm:max-w-none mt-1">
+                <div className="relative w-full mt-1">
                   <select
                     value={color.role}
                     onChange={(e) => updateColorRole(idx, e.target.value as ColorRole)}
-                    className={`w-full text-[6px] sm:text-[8.5px] font-sans font-black uppercase tracking-wider rounded px-0.5 py-0.5 border cursor-pointer pr-3 sm:pr-6 appearance-none transition-all outline-hidden text-center truncate ${
+                    className={`w-full text-[9px] sm:text-[8.5px] font-sans font-black uppercase tracking-wider rounded px-0.5 py-1 sm:py-0.5 border cursor-pointer pr-4 sm:pr-6 appearance-none transition-all outline-hidden text-center truncate ${
                       isDark ? "hover:bg-white/15" : "hover:bg-black/10"
                     }`}
                     style={{
@@ -386,8 +390,8 @@ export const PaletteGenerator: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                  <div className="absolute right-0.5 sm:right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-85">
-                    <ChevronDown className="w-1.5 h-1.5 sm:w-3 sm:h-3" style={{ color: isDark ? "#F4F4F4" : "#1a1a1a" }} />
+                  <div className="absolute right-1 sm:right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-85">
+                    <ChevronDown className="w-3 h-3" style={{ color: isDark ? "#F4F4F4" : "#1a1a1a" }} />
                   </div>
                 </div>
 
@@ -399,7 +403,7 @@ export const PaletteGenerator: React.FC = () => {
                       color: isDark ? "#F4F4F4" : "#1a1a1a",
                       borderColor: isDark ? "rgba(244,244,244,0.45)" : "rgba(26,26,26,0.35)",
                     }}
-                    className={`px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded transition-all cursor-pointer flex items-center justify-center gap-1 text-[8px] sm:text-[10px] uppercase font-sans font-black tracking-wider border ${
+                    className={`px-3.5 py-1.5 sm:px-2.5 sm:py-1 rounded transition-all cursor-pointer flex items-center justify-center gap-1 text-[8px] sm:text-[10px] uppercase font-sans font-black tracking-wider border ${
                       color.locked
                         ? isDark
                           ? "bg-white/20 shadow-xs scale-105"
@@ -412,12 +416,12 @@ export const PaletteGenerator: React.FC = () => {
                   >
                     {color.locked ? (
                       <>
-                        <Lock className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 animate-pulse" />
+                        <Lock className="w-3.5 h-3.5 animate-pulse" />
                         <span className="hidden sm:inline">Unlock</span>
                       </>
                     ) : (
                       <>
-                        <Unlock className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 opacity-80" />
+                        <Unlock className="w-3.5 h-3.5 opacity-80" />
                         <span className="hidden sm:inline">Lock Color</span>
                       </>
                     )}
@@ -430,8 +434,8 @@ export const PaletteGenerator: React.FC = () => {
                 <div className={`hidden sm:block text-[9px] uppercase tracking-widest font-extrabold ${isDark ? "text-white/60" : "text-slate-550"}`}>
                   Science Score
                 </div>
-                <div className={`text-[10px] sm:text-2xl font-black sm:font-light ${labelColor}`}>
-                  <span className="sm:hidden text-[7px] uppercase tracking-wide font-bold opacity-60 mr-0.5">Sc:</span>
+                <div className={`text-xs sm:text-2xl font-black sm:font-light ${labelColor}`}>
+                  <span className="sm:hidden text-[8px] uppercase tracking-wide font-bold opacity-60 mr-1">Score</span>
                   {getSingleColorScore(color, currentColors)}
                 </div>
               </div>
@@ -443,36 +447,75 @@ export const PaletteGenerator: React.FC = () => {
       {/* Control Panel Bar */}
       <div className="w-full max-w-7xl mt-4 sm:mt-6 p-4 sm:p-6 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col lg:flex-row justify-between items-center gap-4 sm:gap-6">
         
+        {/* Phones: the big Spin button first, then four labelled actions. The
+            sm+ versions of these live in the block further down. */}
+        <div className="sm:hidden w-full space-y-2.5">
+          <button
+            onClick={spinPalette}
+            disabled={isSpinning}
+            style={{ backgroundColor: "#059669", borderColor: "#047857" }}
+            className="w-full h-16 rounded-xl border-2 text-white font-sans font-black text-base tracking-widest uppercase shadow-lg flex items-center justify-center gap-2.5 cursor-pointer select-none active:scale-[0.98] active:brightness-95 disabled:opacity-70 transition-all touch-manipulation"
+            title="Spin the unlocked colors"
+          >
+            <RefreshCw className={`w-5 h-5 ${isSpinning ? "animate-spin" : ""}`} />
+            <span>Spin</span>
+          </button>
+
+          <div className="grid grid-flow-col auto-cols-fr gap-2">
+            {currentColors.length < 10 && (
+              <button onClick={addColumn} className={mobileAction} style={{ color: "#2589BD", borderColor: "#2589BD" }} title="Add a color (up to 10)">
+                <Plus className="w-5 h-5" />
+                <span>Add</span>
+              </button>
+            )}
+            <button onClick={() => setSaveOpen(true)} className={`${mobileAction} border-slate-200 text-slate-700`} title="Save this palette to your account">
+              <Save className="w-5 h-5 text-slate-500" />
+              <span>Save</span>
+            </button>
+            <button onClick={() => setExportOpen(true)} className={`${mobileAction} border-slate-200 text-slate-700`} title="Export as CSS, Tailwind, design tokens or a Claude brief">
+              <Share className="w-5 h-5 text-slate-500" />
+              <span>Export</span>
+            </button>
+            {userSubscription.tier === "free" && (
+              <button onClick={() => setShowUpgradeModal(true)} className={mobileAction} style={{ color: "#7F345F", borderColor: "#7F345F" }} title="See what palette Pro adds">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <span>Go Pro</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Color Science Harmony Selection */}
         <div className="flex flex-col lg:flex-row items-center gap-3 sm:gap-4 w-full lg:w-auto">
-          <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
             <Sparkles className="w-4 h-4" style={{ color: "#2589BD" }} />
             <span className="text-[11px] font-sans font-extrabold text-slate-400 uppercase tracking-widest">
               Harmony Rule:
             </span>
           </div>
 
-          {/* Mobile Harmony representation: Highly functional and visual Native Select dropdown */}
+          {/* Phones: a compact native picker with the rule explained beneath */}
           <div className="block sm:hidden w-full">
-            <select
-              value={harmonyMode}
-              onChange={(e) => setHarmonyMode(e.target.value as HarmonyMode)}
-              className="w-full p-2.5 rounded-lg bg-slate-50 border text-xs font-sans font-black text-slate-800 uppercase tracking-wider cursor-pointer outline-hidden focus:ring-1 focus:ring-slate-300"
-              style={{ borderColor: "#1a1a1a" }}
-            >
-              <option value="analogous">Analogous ⭐ (Neighboring Shades)</option>
-              <option value="monochromatic">Monochromatic (Clean Tones)</option>
-              <option value="complementary">Complementary ⭐ (Opposite Contrast)</option>
-              <option value="triadic">Triadic ⭐ (Balanced Triangles)</option>
-              <option value="tetradic">Tetradic ⭐ (Four-Point Complex)</option>
-              <option value="split">Split ⭐ (Refined Contrasts)</option>
-              <option value="random">Random (Break Creative Block)</option>
-            </select>
-            <p className="text-[10px] text-slate-500 mt-1 italic leading-tight">
+            <label className="flex items-center gap-2.5">
+              <span className="text-[10px] font-sans font-extrabold text-slate-400 uppercase tracking-widest shrink-0">Harmony</span>
+              <select
+                value={harmonyMode}
+                onChange={(e) => setHarmonyMode(e.target.value as HarmonyMode)}
+                className="flex-1 min-w-0 h-10 px-2.5 rounded-lg bg-slate-50 border border-slate-300 text-sm font-sans font-semibold text-slate-800 capitalize cursor-pointer outline-hidden focus:ring-1 focus:ring-slate-400"
+              >
+                {[...firstRowModes, ...secondRowModes].map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode === "split" ? "Split complementary" : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    {userSubscription.tier === "free" && proModes.includes(mode) ? " (Pro)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
               {harmonyDescriptions[harmonyMode]}
             </p>
           </div>
-          
+
           {/* Desktop Harmony representation: Beautiful multi-row interactive swatches */}
           <div className="hidden sm:flex flex-col gap-2.5 items-center w-full">
             {/* Top Row: 4 buttons */}
@@ -588,7 +631,7 @@ export const PaletteGenerator: React.FC = () => {
         </div>
 
         {/* Action Spin and Save Launch Buttons - Formatted as horizontal single-row stream on mobile */}
-        <div className="flex flex-row items-center justify-between sm:justify-end gap-2 sm:gap-4 w-full lg:w-auto shrink-0 mt-2 lg:mt-0">
+        <div className="hidden sm:flex flex-row items-center justify-end gap-4 w-full lg:w-auto shrink-0 lg:mt-0">
           
           <div className="flex flex-row sm:flex-col items-stretch gap-1.5 sm:gap-2 flex-1 sm:flex-initial sm:w-36">
             {/* Add Color Column */}
@@ -609,7 +652,7 @@ export const PaletteGenerator: React.FC = () => {
               onClick={() => setSaveOpen(true)}
               className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
             >
-              <FolderPlus className="w-3.5 h-3.5 text-slate-400" />
+              <Save className="w-3.5 h-3.5 text-slate-400" />
               <span className="hidden sm:inline">Save Palette</span>
             </button>
 
@@ -619,7 +662,7 @@ export const PaletteGenerator: React.FC = () => {
               className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
               title="Export this palette as CSS, Tailwind, design tokens or a Claude brief"
             >
-              <Download className="w-3.5 h-3.5 text-slate-400" />
+              <Share className="w-3.5 h-3.5 text-slate-400" />
               <span className="hidden sm:inline">Export</span>
             </button>
 
@@ -627,11 +670,12 @@ export const PaletteGenerator: React.FC = () => {
             {userSubscription.tier === "free" && (
               <button
                 onClick={() => setShowUpgradeModal(true)}
-                className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-4 bg-amber-50 border text-[#7F345F] hover:bg-amber-100 rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
-                style={{ borderColor: "#1F988C" }}
+                className="flex-1 sm:flex-initial py-2.5 sm:py-3 px-2 sm:px-4 bg-white border hover:bg-rose-50 rounded font-black text-[9px] sm:text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                style={{ color: "#7F345F", borderColor: "#7F345F" }}
+                title="See what palette Pro adds"
               >
-                <span className="text-[10px] sm:text-xs font-black px-1 rounded" style={{ color: "#1F988C", backgroundColor: "rgba(31, 152, 140, 0.15)" }}>PRO</span>
-                <span className="hidden sm:inline">Turn Pro</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Go Pro</span>
               </button>
             )}
           </div>

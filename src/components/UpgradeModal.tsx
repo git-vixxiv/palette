@@ -175,25 +175,25 @@ export const UpgradeModal: React.FC = () => {
         </button>
 
         {/* Left: premium feature value */}
-        <div className="w-full md:w-1/2 p-6 md:p-8 bg-slate-950 text-white flex flex-col justify-between relative overflow-y-auto max-h-[300px] sm:max-h-[350px] md:max-h-none md:overflow-hidden shrink-0">
+        <div className="w-full md:w-1/2 p-5 pr-12 md:p-8 bg-slate-950 text-white flex flex-col justify-between relative overflow-hidden shrink-0">
           <div className="absolute top-0 left-0 w-64 h-64 bg-sky-500/10 rounded-full blur-3xl -translate-y-1/2 -translate-x-1/2" />
           <div className="absolute bottom-0 right-0 w-64 h-64 bg-[#7F345F]/20 rounded-full blur-3xl translate-y-1/2 translate-x-1/2" />
 
           <div className="relative z-10">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/10 text-[10px] uppercase font-mono tracking-widest text-[#d1c69e] mb-6">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/10 text-[10px] uppercase font-mono tracking-widest text-[#d1c69e] mb-3 md:mb-6">
               <Sparkles className="w-3 h-3 text-[#d1c69e]" />
               <span>palette Pro</span>
             </div>
 
-            <h3 className="text-2xl md:text-3xl font-display font-black tracking-tight mb-2 leading-none">
+            <h3 className="text-xl md:text-3xl font-display font-black tracking-tight mb-2 leading-tight md:leading-none">
               The Perfect Palette, <br />
               Backed by (Color) Science
             </h3>
-            <p className="text-xs text-slate-400 font-sans mb-8">
-              Unlock the core algorithms, expanding to complete bento-grid layouts with WCAG contrast metrics.
+            <p className="text-xs text-slate-400 font-sans md:mb-8">
+              Pro unlocks every harmony rule, up to 10 colors, all preview layouts and exports, and unlimited saved palettes.
             </p>
 
-            <div className="space-y-4">
+            <div className="hidden md:block space-y-4">
               <div className="flex items-start gap-3">
                 <div className="w-5 h-5 rounded bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0 mt-0.5">
                   <Layers className="w-3.5 h-3.5 text-sky-400" />
@@ -236,14 +236,14 @@ export const UpgradeModal: React.FC = () => {
             </div>
           </div>
 
-          <div className="relative z-10 pt-8 border-t border-white/10 mt-6 flex items-center justify-between text-[11px] text-slate-400">
+          <div className="relative z-10 pt-8 border-t border-white/10 mt-6 hidden md:flex items-center justify-between text-[11px] text-slate-400">
             <span className="flex items-center gap-1"><ShieldCheck className="w-4 h-4 text-emerald-400" /> Secured by Square</span>
             <span>{SQUARE_ENV === "production" ? "Live payments" : "Sandbox mode"}</span>
           </div>
         </div>
 
         {/* Right: checkout */}
-        <div className="w-full md:w-1/2 p-6 md:p-8 bg-slate-50 flex flex-col justify-between overflow-y-auto max-h-[85vh] md:max-h-full">
+        <div className="w-full md:w-1/2 p-5 md:p-8 bg-slate-50 flex flex-col justify-between overflow-y-auto flex-1 min-h-0 md:max-h-full">
           <AnimatePresence mode="wait">
             {success ? (
               <motion.div

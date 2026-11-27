@@ -283,6 +283,11 @@ export const createSubscription = onCall(
       if (squareErrors?.length) {
         logger.error("Square API error", { uid, plan, errors: squareErrors });
         const e = squareErrors[0];
+        // Square refusing our own credentials is not something the customer
+        // can fix; the client shows its "unavailable on our side" message.
+        if (e.category === "AUTHENTICATION_ERROR") {
+          throw new HttpsError("unavailable", "unavailable");
+        }
         throw new HttpsError(
           "failed-precondition",
           e.detail || e.code || "Payment failed."

@@ -9,16 +9,18 @@ export const Header: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="flex items-center justify-between px-6 md:px-12 py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
+    <header className="flex items-center justify-between gap-3 px-4 sm:px-6 md:px-12 py-3 sm:py-4 bg-white border-b border-slate-200 shadow-sm relative z-45">
       {/* Brand Logo and Title */}
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "#2589BD" }}>
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "#2589BD" }}>
           <div className="w-4 h-4 border-2 border-white rounded-full"></div>
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-lg md:text-xl font-display font-black tracking-tight text-slate-800 lowercase">
-              palette <span className="font-bold text-xs font-sans tracking-normal lowercase" style={{ color: "#2589BD" }}>by vixxiv</span>
+            {/* Lockup: stacked beside the mark on phones, one line from sm up. Never wraps. */}
+            <span className="flex flex-col sm:flex-row sm:items-baseline sm:gap-1.5 whitespace-nowrap">
+              <span className="text-xl font-display font-black tracking-tight text-slate-800 lowercase leading-none">palette</span>
+              <span className="text-[11px] sm:text-xs font-bold font-sans lowercase leading-none mt-1 sm:mt-0" style={{ color: "#2589BD" }}>by vixxiv</span>
             </span>
             <span className="text-[10px] uppercase font-mono font-bold tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm sm:inline-block hidden">
               Lab & Analyzer
@@ -31,7 +33,7 @@ export const Header: React.FC = () => {
       </div>
 
       {/* User Actions */}
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-3 sm:gap-6 shrink-0">
         <nav className="hidden lg:flex items-center gap-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           <a href="#visualize" className="hover:text-[#2589BD] transition-colors">In Action</a>
           <a href="#scoring-analytics" className="hover:text-[#2589BD] transition-colors">Theory & Analytics</a>
@@ -41,7 +43,7 @@ export const Header: React.FC = () => {
 
         <div className="hidden lg:block h-5 w-[1px] bg-slate-200" />
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {/* Connection badge status */}
           <div className="text-right hidden sm:block">
             <p className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">
@@ -56,16 +58,16 @@ export const Header: React.FC = () => {
           {userSubscription.tier === "free" ? (
             <button
               onClick={() => setShowUpgradeModal(true)}
-              className="px-3 py-1.5 text-[9px] font-sans font-extrabold uppercase tracking-wider rounded border cursor-pointer transition-all hover:bg-rose-50 flex items-center gap-1.5 shrink-0 bg-white"
+              className="h-9 px-3 text-[11px] font-sans font-extrabold uppercase tracking-wider rounded-md border cursor-pointer transition-all hover:bg-rose-50 flex items-center gap-1.5 shrink-0 bg-white whitespace-nowrap"
               style={{ color: "#7F345F", borderColor: "#7F345F" }}
+              title="See what palette Pro adds"
             >
-              <Sparkles className="w-3 h-3 text-amber-500 animate-spin-hover" />
-              <span className="hidden sm:inline">Join Pro</span>
-              <span className="sm:hidden">Join</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin-hover" />
+              <span>Go Pro</span>
             </button>
           ) : (
             <div
-              className="px-2.5 py-1.5 text-[9px] font-sans font-black uppercase tracking-widest rounded border shrink-0 flex items-center gap-1 select-none"
+              className="h-9 px-2.5 text-[10px] font-sans font-black uppercase tracking-wider rounded-md border shrink-0 flex items-center gap-1 select-none whitespace-nowrap"
               style={{ color: "#22c55e", borderColor: "#22c55e", backgroundColor: "rgba(34, 197, 94, 0.05)" }}
             >
               <Award className="w-3 h-3 text-emerald-500" />
@@ -81,10 +83,9 @@ export const Header: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -5 }}
                 onClick={() => openAuth("signin")}
-                className="px-4 py-2 text-xs font-bold uppercase tracking-widest bg-slate-900 hover:bg-slate-800 text-white rounded-md transition-all shadow-xs flex items-center border border-transparent cursor-pointer"
+                className="h-9 px-3 text-[11px] font-sans font-extrabold uppercase tracking-wider bg-slate-900 hover:bg-slate-800 text-white rounded-md transition-all shadow-xs flex items-center border border-slate-900 cursor-pointer whitespace-nowrap"
               >
-                <span className="hidden sm:inline" style={{ fontSize: "9.6px" }}>Sign In</span>
-                <span className="sm:hidden" style={{ fontSize: "9.6px" }}>Sign In</span>
+                Sign In
               </motion.button>
             ) : (
               <div className="relative">
@@ -94,13 +95,13 @@ export const Header: React.FC = () => {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   onClick={() => setMenuOpen(!menuOpen)}
-                  className="flex items-center space-x-2.5 p-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md transition-all cursor-pointer"
+                  className="h-9 flex items-center gap-1.5 sm:gap-2.5 px-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md transition-all cursor-pointer"
                 >
                   <img
                     src={user.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50"}
                     alt="Avatar"
                     referrerPolicy="no-referrer"
-                    className="w-7 h-7 roundedobject-cover shadow-3xs border border-white"
+                    className="w-7 h-7 rounded object-cover shadow-3xs border border-white"
                   />
                   <span className="text-xs font-sans font-bold text-slate-700 max-w-[120px] truncate hidden sm:inline">
                     {user.displayName || "Explorer"}

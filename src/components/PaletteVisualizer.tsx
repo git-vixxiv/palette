@@ -778,7 +778,7 @@ export const PaletteVisualizer: React.FC = () => {
     }`;
 
   return (
-    <section className="w-full max-w-7xl mx-auto p-6 md:p-8 space-y-5" id="visualize">
+    <section className="w-full max-w-7xl mx-auto p-4 sm:p-6 md:p-8 space-y-5" id="visualize">
       <div className="border-l-4 pl-4 space-y-1" style={{ borderLeftColor: "#d1c69e" }}>
         <h2 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-slate-800">See It In Action</h2>
         <p className="text-xs sm:text-sm text-slate-500 font-sans">
@@ -787,7 +787,7 @@ export const PaletteVisualizer: React.FC = () => {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Preview layout">
+        <div className="grid grid-cols-2 w-full sm:w-auto sm:flex sm:flex-wrap gap-2" role="tablist" aria-label="Preview layout">
           {TEMPLATES.map(({ id, label, icon: Icon, pro }) => (
             <button
               key={id}
@@ -805,7 +805,7 @@ export const PaletteVisualizer: React.FC = () => {
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-stretch gap-2 w-full sm:w-auto">
           <div role="group" aria-label="Preview theme" className="flex items-center bg-white border border-slate-200 rounded shadow-3xs overflow-hidden">
             <button type="button" onClick={() => setDark(false)} aria-pressed={!dark} title="Preview as a light theme" className={`py-2 px-3 font-bold uppercase tracking-wider text-[11px] transition-all flex items-center gap-2 cursor-pointer ${!dark ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
               <Sun className="w-3.5 h-3.5" />
@@ -816,7 +816,7 @@ export const PaletteVisualizer: React.FC = () => {
               <span className="hidden sm:inline">Dark theme</span>
             </button>
           </div>
-          <button type="button" onClick={spinPalette} title="Spin the unlocked colors" className="py-2 px-3 font-bold uppercase tracking-wider text-[11px] text-white rounded flex items-center gap-2 cursor-pointer hover:brightness-110 transition-all" style={{ backgroundColor: "#059669" }}>
+          <button type="button" onClick={spinPalette} title="Spin the unlocked colors" className="flex-1 sm:flex-initial py-2.5 sm:py-2 px-3 font-bold uppercase tracking-wider text-[11px] text-white rounded flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all touch-manipulation" style={{ backgroundColor: "#059669" }}>
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Spin</span>
           </button>
