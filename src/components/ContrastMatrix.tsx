@@ -32,7 +32,7 @@ export const ContrastMatrix: React.FC = () => {
       {/* Visual Header Block */}
       <div className="border-l-4 pl-4 space-y-1" style={{ borderLeftColor: "#d1c69e" }}>
         <h2 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-slate-800 flex items-center gap-2">
-          <span>Contrast Ratio Matrix & Testing Sandbox</span>
+          <span>Contrast Ratio Matrix & Checker</span>
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 font-sans">
           Analyze WCAG 2.1 accessibility scores between color combos. Columns denote <strong>Text color</strong>, rows denote <strong>Background color</strong>.
@@ -78,8 +78,8 @@ export const ContrastMatrix: React.FC = () => {
               </div>
               {colors.map((color, cIdx) => (
                 <div key={cIdx} className="text-center p-2 bg-slate-50 rounded border border-slate-150">
-                  <div className="w-4 h-4 rounded-full mx-auto" style={{ backgroundColor: color.hex }} />
-                  <span className="block text-[10px] font-mono font-bold mt-1 text-slate-700 truncate" title={color.hex}>
+                  <div className="w-5 h-5 rounded-full mx-auto border-2 border-slate-400" style={{ backgroundColor: color.hex }} />
+                  <span className="block text-[10px] font-mono font-bold mt-1 text-slate-700 uppercase truncate" title={color.hex}>
                     {color.hex}
                   </span>
                   <span className="block text-[8px] font-sans text-slate-400 font-semibold uppercase tracking-wider truncate">
@@ -100,7 +100,7 @@ export const ContrastMatrix: React.FC = () => {
                   
                   {/* Row background indicator */}
                   <div className="flex items-center space-x-2 bg-slate-50 p-2 rounded border border-slate-150 h-14">
-                    <div className="w-5 h-5 rounded shrink-0 shadow-3xs" style={{ backgroundColor: bgCol.hex }} />
+                    <div className="w-5 h-5 rounded shrink-0 border-2 border-slate-400" style={{ backgroundColor: bgCol.hex }} />
                     <div className="truncate min-w-0">
                       <span className="block text-[10px] font-mono text-slate-600 font-bold uppercase truncate">{bgCol.hex}</span>
                       <span className="block text-[8px] font-sans text-slate-400 font-bold uppercase tracking-wider truncate">{bgCol.role}</span>
@@ -159,8 +159,8 @@ export const ContrastMatrix: React.FC = () => {
                           showToast("Assigned selected colors check to Sandbox", "info");
                         }}
                         style={{ backgroundColor: bgCol.hex, color: textCol.hex }}
-                        className="group flex flex-col items-center justify-center p-2 rounded h-14 border border-slate-200/25 shadow-3xs hover:scale-[1.03] active:scale-97 transition-all relative text-center text-xs select-none cursor-pointer"
-                        title={`Click to analyze in detail under Sandbox. BG: ${bgCol.hex}, Text: ${textCol.hex}. Ratio: ${ratio}:1`}
+                        className="group flex flex-col items-center justify-center p-2 rounded h-14 border border-slate-300 shadow-3xs hover:scale-[1.03] active:scale-97 transition-all relative text-center text-xs select-none cursor-pointer"
+                        title={`Click to open this pair in the checker. BG: ${bgCol.hex}, Text: ${textCol.hex}. Ratio: ${ratio}:1`}
                       >
                         <span className="font-bold text-xs font-sans leading-none z-10 transition-transform group-hover:scale-110">
                           Aa
@@ -209,13 +209,13 @@ export const ContrastMatrix: React.FC = () => {
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
                 Text Color
               </label>
-              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-150 rounded">
+              <div className="flex flex-wrap gap-3 p-3 bg-slate-50 border border-slate-150 rounded">
                 {colors.map((c, i) => (
                   <button
                     key={i}
                     onClick={() => setTextIndex(i)}
-                    className={`w-6 h-6 rounded-full border transition-all ${
-                      activeTextIndex === i ? "border-slate-800 scale-110 shadow-sm" : "border-slate-300"
+                    className={`w-7 h-7 rounded-full border-2 cursor-pointer transition-all ${
+                      activeTextIndex === i ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900" : "border-slate-400"
                     }`}
                     style={{ backgroundColor: c.hex }}
                     title={`Use ${c.hex} (${c.role}) for text`}
@@ -229,13 +229,13 @@ export const ContrastMatrix: React.FC = () => {
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
                 Background Color
               </label>
-              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-150 rounded">
+              <div className="flex flex-wrap gap-3 p-3 bg-slate-50 border border-slate-150 rounded">
                 {colors.map((c, i) => (
                   <button
                     key={i}
                     onClick={() => setBgIndex(i)}
-                    className={`w-6 h-6 rounded-full border transition-all ${
-                      activeBgIndex === i ? "border-slate-800 scale-110 shadow-sm" : "border-slate-200"
+                    className={`w-7 h-7 rounded-full border-2 cursor-pointer transition-all ${
+                      activeBgIndex === i ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900" : "border-slate-400"
                     }`}
                     style={{ backgroundColor: c.hex }}
                     title={`Use ${c.hex} (${c.role}) for background`}
@@ -285,7 +285,7 @@ export const ContrastMatrix: React.FC = () => {
           {/* Real-Time Live Render Field */}
           <div
             style={{ backgroundColor: bgColor, color: textColor }}
-            className="flex-1 rounded p-6 shadow-3xs border border-transparent min-h-[140px] flex flex-col justify-between transition-colors duration-250"
+            className="flex-1 rounded p-6 shadow-3xs border border-slate-300 min-h-[140px] flex flex-col justify-between transition-colors duration-250"
           >
             <div>
               <p className={`font-sans leading-relaxed break-words ${
