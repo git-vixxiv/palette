@@ -156,7 +156,7 @@ export const ContrastMatrix: React.FC = () => {
                         onClick={() => {
                           setTextIndex(cIdx);
                           setBgIndex(rIdx);
-                          showToast("Assigned selected colors check to Sandbox", "info");
+                          showToast("Pair opened in the checker", "info");
                         }}
                         style={{ backgroundColor: bgCol.hex, color: textCol.hex }}
                         className="group flex flex-col items-center justify-center p-2 rounded h-14 border border-slate-300 shadow-3xs hover:scale-[1.03] active:scale-97 transition-all relative text-center text-xs select-none cursor-pointer"
