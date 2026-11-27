@@ -23,6 +23,7 @@ import { defineSecret, defineString } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 import { Client, Environment, WebhooksHelper } from "square";
 import { randomUUID, createHmac } from "node:crypto";
 
@@ -47,7 +48,80 @@ const LIFETIME_PRICE_CENTS = defineString("LIFETIME_PRICE_CENTS", { default: "50
 // validate the event signature.
 const SQUARE_WEBHOOK_URL = defineString("SQUARE_WEBHOOK_URL", { default: "" });
 
+// List prices in cents. Used to work out promo prices and to restore the
+// normal price after a first-payment-only promo.
+const PRICE_MONTHLY_CENTS = defineString("PRICE_MONTHLY_CENTS", { default: "500" });
+const PRICE_ANNUAL_CENTS = defineString("PRICE_ANNUAL_CENTS", { default: "2500" });
+// Comma-separated sign-in emails allowed to use the admin tools.
+const ADMIN_EMAILS = defineString("ADMIN_EMAILS", { default: "joe@vixxiv.com" });
+
 type Plan = "monthly" | "annual" | "lifetime";
+
+function listPriceCents(plan: Plan): number {
+  const raw =
+    plan === "monthly" ? PRICE_MONTHLY_CENTS.value() : plan === "annual" ? PRICE_ANNUAL_CENTS.value() : LIFETIME_PRICE_CENTS.value();
+  return parseInt(raw, 10);
+}
+
+const dollars = (cents: number) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+const PLAN_UNIT: Record<Plan, string> = { monthly: "/mo", annual: "/yr", lifetime: " lifetime" };
+
+/* ----------------------------------------------------------------------- *
+ * Promo codes
+ *   promoCodes/{CODE}: { kind: "percent" | "fixed", percentOff?, fixedCents?:
+ *   { monthly?, annual?, lifetime? }, plans: Plan[], duration: "first" |
+ *   "forever", maxRedemptions?, redeemed, expiresAt?, active, note }
+ *   promoCodes/{CODE}/redemptions/{uid}: one per account.
+ * Only Cloud Functions read or write these (firestore.rules denies clients).
+ * ----------------------------------------------------------------------- */
+
+// Square will not charge a card less than this.
+const MIN_CHARGE_CENTS = 100;
+
+interface PromoQuote {
+  code: string;
+  priceCents: number;
+  fullCents: number;
+  duration: "first" | "forever";
+}
+
+const cleanCode = (raw: unknown) => String(raw ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
+
+/** Work out what `plan` costs with this code for this account, or explain why it can't be used. */
+async function quotePromo(rawCode: unknown, plan: Plan, uid: string): Promise<PromoQuote> {
+  const code = cleanCode(rawCode);
+  if (!code) throw new HttpsError("invalid-argument", "Enter a promo code.");
+  const ref = db.collection("promoCodes").doc(code);
+  const [snap, used] = await Promise.all([ref.get(), ref.collection("redemptions").doc(uid).get()]);
+  const d = snap.data();
+  if (!snap.exists || !d || d.active === false) throw new HttpsError("not-found", "That promo code isn't valid.");
+  if (d.expiresAt && d.expiresAt.toMillis() < Date.now()) throw new HttpsError("failed-precondition", "That promo code has expired.");
+  if (d.maxRedemptions && (d.redeemed ?? 0) >= d.maxRedemptions) throw new HttpsError("failed-precondition", "That promo code has been fully used.");
+  if (used.exists) throw new HttpsError("failed-precondition", "You've already used that promo code.");
+  if (Array.isArray(d.plans) && !d.plans.includes(plan)) throw new HttpsError("failed-precondition", `That promo code doesn't apply to the ${plan} plan.`);
+
+  const fullCents = listPriceCents(plan);
+  let priceCents: number;
+  if (d.kind === "fixed") {
+    priceCents = Number(d.fixedCents?.[plan]);
+    if (!Number.isFinite(priceCents)) throw new HttpsError("failed-precondition", `That promo code doesn't apply to the ${plan} plan.`);
+  } else {
+    priceCents = Math.round((fullCents * (100 - Number(d.percentOff))) / 100);
+  }
+  priceCents = Math.max(MIN_CHARGE_CENTS, Math.round(priceCents));
+  if (priceCents >= fullCents) throw new HttpsError("failed-precondition", "That promo code doesn't lower the price of this plan.");
+  // A one-time purchase has no renewals, so "first payment" and "every renewal" are the same thing.
+  const duration: "first" | "forever" = plan === "lifetime" ? "forever" : d.duration === "first" ? "first" : "forever";
+  return { code, priceCents, fullCents, duration };
+}
+
+/** Callable: preview a promo code on the checkout screen. */
+export const validatePromo = onCall({ region: "us-central1", cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "You must be signed in.");
+  const plan = request.data?.plan as Plan;
+  if (!["monthly", "annual", "lifetime"].includes(plan)) throw new HttpsError("invalid-argument", "A valid plan is required.");
+  return await quotePromo(request.data?.code, plan, request.auth.uid);
+});
 
 const PLAN_LABEL: Record<Plan, string> = {
   monthly: "$5/mo",
@@ -124,6 +198,7 @@ export const createSubscription = onCall(
     const plan = request.data?.plan as Plan;
     const cardToken = request.data?.token as string;
     const verificationToken = request.data?.verificationToken as string | undefined;
+    const promoInput = request.data?.promoCode as string | undefined;
 
     if (!plan || !["monthly", "annual", "lifetime"].includes(plan)) {
       throw new HttpsError("invalid-argument", "A valid plan is required.");
@@ -135,6 +210,9 @@ export const createSubscription = onCall(
     const client = squareClient();
     const locationId = SQUARE_LOCATION_ID.value();
     const userRef = db.collection("users").doc(uid);
+
+    // A promo code is checked before anything is charged; a bad code stops here.
+    const promo: PromoQuote | null = promoInput ? await quotePromo(promoInput, plan, uid) : null;
 
     // 2. Refuse duplicate purchases and take a short checkout lock, atomically.
     //    - Lifetime owners have nothing left to buy.
@@ -201,7 +279,7 @@ export const createSubscription = onCall(
           sourceId: cardId,
           idempotencyKey: randomUUID(),
           amountMoney: {
-            amount: BigInt(parseInt(LIFETIME_PRICE_CENTS.value(), 10)),
+            amount: BigInt(promo ? promo.priceCents : listPriceCents("lifetime")),
             currency: "USD",
           },
           locationId,
@@ -244,6 +322,10 @@ export const createSubscription = onCall(
           planVariationId,
           customerId: squareCustomerId,
           cardId,
+          // Promo: bill the promo price in place of the plan's own price. For
+          // a first-payment-only code the webhook restores the normal price
+          // once the first invoice has been paid.
+          ...(promo ? { priceOverrideMoney: { amount: BigInt(promo.priceCents), currency: "USD" } } : {}),
         });
         const sub = subRes.result.subscription;
         subscriptionId = sub?.id ?? "";
@@ -261,7 +343,16 @@ export const createSubscription = onCall(
           subscriptionId,
           subscriptionStatus: subscriptionStatus === "pending" ? "active" : subscriptionStatus,
           ...expiryFields(premiumExpires),
-          pricingPlan: PLAN_LABEL[plan],
+          pricingPlan: promo
+            ? promo.duration === "first" && plan !== "lifetime"
+              ? `${PLAN_LABEL[plan]} (first payment ${dollars(promo.priceCents)})`
+              : `${dollars(promo.priceCents)}${PLAN_UNIT[plan]} (promo ${promo.code})`
+            : PLAN_LABEL[plan],
+          comp: FieldValue.delete(),
+          promoCode: promo ? promo.code : FieldValue.delete(),
+          promoPriceCents: promo ? promo.priceCents : FieldValue.delete(),
+          // Set while a first-payment-only promo still has to be reverted.
+          promoRevertPending: promo && promo.duration === "first" && plan !== "lifetime" ? true : FieldValue.delete(),
           squareCustomerId,
           squareCardId: cardId,
           checkoutLockAt: FieldValue.delete(),
@@ -270,7 +361,24 @@ export const createSubscription = onCall(
         { merge: true }
       );
 
-      logger.info("Subscription granted", { uid, plan, subscriptionId });
+      if (promo) {
+        // Count the redemption. The charge already succeeded, so a failure
+        // here is logged and must not undo the purchase.
+        const promoRef = db.collection("promoCodes").doc(promo.code);
+        await Promise.all([
+          promoRef.set({ redeemed: FieldValue.increment(1) }, { merge: true }),
+          promoRef.collection("redemptions").doc(uid).set({
+            uid,
+            email,
+            plan,
+            priceCents: promo.priceCents,
+            fullCents: promo.fullCents,
+            at: FieldValue.serverTimestamp(),
+          }),
+        ]).catch((e) => logger.error("Could not record promo redemption", { uid, code: promo.code, message: e?.message }));
+      }
+
+      logger.info("Subscription granted", { uid, plan, subscriptionId, promo: promo?.code });
       return { success: true, tier: TIER_FOR_PLAN[plan], pricingPlan: PLAN_LABEL[plan] };
     } catch (err: any) {
       // Release the checkout lock so the user can retry straight away.
@@ -515,15 +623,41 @@ export const squareWebhook = onRequest(
           // Ask Square for the authoritative paid-through date; fall back to
           // one plan period from now if it is not available.
           let paidThrough: Date | null = null;
+          let subVersion: bigint | undefined;
           try {
             const subRes = await squareClient().subscriptionsApi.retrieveSubscription(
               invoice.subscription_id
             );
             paidThrough = dateFromSquareDay(subRes.result.subscription?.chargedThroughDate);
+            subVersion = subRes.result.subscription?.version;
           } catch (lookupErr: any) {
             logger.warn("Could not read paid-through date", { message: lookupErr?.message });
           }
           const plan: Plan = doc.get("tier") === "pro-annual" ? "annual" : "monthly";
+
+          // First-payment-only promo: the discounted invoice is now paid, so
+          // set the subscription back to the normal price for every renewal.
+          if (doc.get("promoRevertPending") === true) {
+            try {
+              await squareClient().subscriptionsApi.updateSubscription(invoice.subscription_id, {
+                subscription: {
+                  priceOverrideMoney: { amount: BigInt(listPriceCents(plan)), currency: "USD" },
+                  ...(subVersion !== undefined ? { version: subVersion } : {}),
+                },
+              });
+              await doc.ref.set({ promoRevertPending: FieldValue.delete(), promoRevertFailed: FieldValue.delete() }, { merge: true });
+              logger.info("Promo reverted to list price", { subscriptionId: invoice.subscription_id, plan });
+            } catch (revertErr: any) {
+              // Leave the flag set so the next invoice event tries again, and
+              // mark the account so it shows up in the admin user list.
+              await doc.ref.set({ promoRevertFailed: true }, { merge: true });
+              logger.error("Could not revert promo price", {
+                subscriptionId: invoice.subscription_id,
+                errors: (revertErr?.result?.errors ?? []).map((x: any) => ({ code: x.code, detail: x.detail, field: x.field })),
+                message: revertErr?.message,
+              });
+            }
+          }
           const keepCanceling = doc.get("subscriptionStatus") === "canceling";
           await doc.ref.set(
             {
@@ -559,6 +693,334 @@ export const squareWebhook = onRequest(
       // a paying or cancelled account in the wrong state.
       logger.error("Webhook handler error", { type, message: err?.message, stack: err?.stack });
       res.status(500).send("handler error");
+    }
+  }
+);
+
+
+/* ----------------------------------------------------------------------- *
+ * adminApi (callable) - owner tools: users, comps, promo codes, revenue.
+ * Every action re-checks that the caller is a verified admin sign-in.
+ * ----------------------------------------------------------------------- */
+
+function requireAdmin(request: { auth?: { uid: string; token: Record<string, any> } }): string {
+  const email = String(request.auth?.token?.email ?? "").toLowerCase();
+  const allowed = ADMIN_EMAILS.value().split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (!request.auth || !email || request.auth.token.email_verified !== true || !allowed.includes(email)) {
+    throw new HttpsError("permission-denied", "Not available.");
+  }
+  return email;
+}
+
+const millis = (v: any): number | null => (v?.toMillis ? v.toMillis() : typeof v === "string" && v ? Date.parse(v) : null);
+
+async function adminUsers() {
+  const auth = getAuth();
+  const authUsers: any[] = [];
+  let pageToken: string | undefined;
+  do {
+    const page = await auth.listUsers(1000, pageToken);
+    authUsers.push(...page.users);
+    pageToken = page.pageToken;
+  } while (pageToken && authUsers.length < 10000);
+
+  const profiles = new Map<string, FirebaseFirestore.DocumentData>();
+  (await db.collection("users").get()).forEach((d) => profiles.set(d.id, d.data()));
+
+  const now = Date.now();
+  const users = authUsers.map((u) => {
+    const p = profiles.get(u.uid) ?? {};
+    const expires = millis(p.premiumExpires);
+    let tier: string = p.tier ?? "free";
+    // Mirror the app: a lapsed monthly/annual plan (3-day grace) counts as free.
+    if ((tier === "pro-monthly" || tier === "pro-annual") && (!expires || expires + 3 * 86400000 < now)) tier = "free";
+    return {
+      uid: u.uid,
+      email: u.email ?? p.email ?? "",
+      name: u.displayName ?? "",
+      created: u.metadata.creationTime ? Date.parse(u.metadata.creationTime) : null,
+      lastSignIn: u.metadata.lastSignInTime ? Date.parse(u.metadata.lastSignInTime) : null,
+      tier,
+      status: p.subscriptionStatus ?? "",
+      plan: p.pricingPlan ?? "",
+      expires,
+      comp: p.comp === true,
+      promoCode: p.promoCode ?? "",
+      promoRevertFailed: p.promoRevertFailed === true,
+      squareCustomerId: p.squareCustomerId ?? "",
+    };
+  });
+  users.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+
+  const paying = users.filter((u) => u.tier !== "free" && !u.comp);
+  const count = (t: string) => paying.filter((u) => u.tier === t).length;
+  const renewing = (t: string) => paying.filter((u) => u.tier === t && u.status !== "canceling").length;
+  const summary = {
+    total: users.length,
+    free: users.filter((u) => u.tier === "free").length,
+    monthly: count("pro-monthly"),
+    annual: count("pro-annual"),
+    lifetime: count("pro-lifetime"),
+    comps: users.filter((u) => u.tier !== "free" && u.comp).length,
+    canceling: paying.filter((u) => u.status === "canceling").length,
+    newLast7: users.filter((u) => (u.created ?? 0) > now - 7 * 86400000).length,
+    newLast30: users.filter((u) => (u.created ?? 0) > now - 30 * 86400000).length,
+    // List-price estimate from subscriptions set to renew. Promo prices are not reflected.
+    mrrCents: Math.round(renewing("pro-monthly") * listPriceCents("monthly") + (renewing("pro-annual") * listPriceCents("annual")) / 12),
+  };
+  return { users, summary };
+}
+
+async function adminRevenue(days: number) {
+  const client = squareClient();
+  const now = Date.now();
+  const begin = new Date(now - days * 86400000).toISOString();
+  const payments: any[] = [];
+  let cursor: string | undefined;
+  let pages = 0;
+  let truncated = false;
+  do {
+    const res = await client.paymentsApi.listPayments(begin, undefined, "DESC", cursor, SQUARE_LOCATION_ID.value(), undefined, undefined, undefined, 100);
+    payments.push(...(res.result.payments ?? []));
+    cursor = res.result.cursor;
+    pages++;
+    if (cursor && pages >= 30) {
+      truncated = true;
+      break;
+    }
+  } while (cursor);
+
+  const emailByCustomer = new Map<string, string>();
+  (await db.collection("users").get()).forEach((d) => {
+    const c = d.get("squareCustomerId");
+    if (c) emailByCustomer.set(c, d.get("email") ?? "");
+  });
+
+  const rows = payments.map((p) => ({
+    id: p.id as string,
+    at: Date.parse(p.createdAt),
+    status: p.status as string,
+    amountCents: Number(p.amountMoney?.amount ?? 0),
+    refundedCents: Number(p.refundedMoney?.amount ?? 0),
+    email: emailByCustomer.get(p.customerId ?? "") ?? "",
+    note: (p.note as string) || (p.orderId ? "Subscription invoice" : ""),
+  }));
+  const done = rows.filter((r) => r.status === "COMPLETED");
+  const windowTotals = (ms: number) => {
+    const inWin = done.filter((r) => r.at >= now - ms);
+    return {
+      sales: inWin.length,
+      grossCents: inWin.reduce((a, r) => a + r.amountCents, 0),
+      refundedCents: inWin.reduce((a, r) => a + r.refundedCents, 0),
+    };
+  };
+  // Daily gross for a chart, oldest first.
+  const byDay = new Map<string, number>();
+  for (const r of done) {
+    const day = new Date(r.at).toISOString().slice(0, 10);
+    byDay.set(day, (byDay.get(day) ?? 0) + r.amountCents - r.refundedCents);
+  }
+  return {
+    environment: SQUARE_ENVIRONMENT.value(),
+    days,
+    truncated,
+    today: windowTotals(now - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime()),
+    last7: windowTotals(7 * 86400000),
+    last30: windowTotals(30 * 86400000),
+    window: windowTotals(days * 86400000),
+    daily: [...byDay.entries()].sort().map(([day, cents]) => ({ day, cents })),
+    payments: rows.slice(0, 100),
+  };
+}
+
+async function adminListPromos() {
+  const snap = await db.collection("promoCodes").get();
+  const promos = snap.docs.map((d) => {
+    const p = d.data();
+    return {
+      code: d.id,
+      kind: p.kind,
+      percentOff: p.percentOff ?? null,
+      fixedCents: p.fixedCents ?? null,
+      plans: p.plans ?? [],
+      duration: p.duration,
+      maxRedemptions: p.maxRedemptions ?? null,
+      redeemed: p.redeemed ?? 0,
+      expiresAt: millis(p.expiresAt),
+      active: p.active !== false,
+      note: p.note ?? "",
+      createdAt: millis(p.createdAt),
+    };
+  });
+  promos.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  return { promos, listPrices: { monthly: listPriceCents("monthly"), annual: listPriceCents("annual"), lifetime: listPriceCents("lifetime") } };
+}
+
+async function adminCreatePromo(data: any, adminEmail: string) {
+  const code = cleanCode(data?.code);
+  if (code.length < 3) throw new HttpsError("invalid-argument", "A code needs at least 3 letters or numbers.");
+  const plans: Plan[] = (Array.isArray(data?.plans) ? data.plans : []).filter((x: any) => ["monthly", "annual", "lifetime"].includes(x));
+  if (!plans.length) throw new HttpsError("invalid-argument", "Choose at least one plan.");
+  const duration = data?.duration === "first" ? "first" : "forever";
+  const doc: Record<string, any> = {
+    plans,
+    duration,
+    active: true,
+    redeemed: 0,
+    note: String(data?.note ?? "").slice(0, 200),
+    createdBy: adminEmail,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+  if (data?.kind === "fixed") {
+    const fixedCents: Record<string, number> = {};
+    for (const plan of plans) {
+      const cents = Math.round(Number(data?.fixedCents?.[plan]));
+      if (!Number.isFinite(cents) || cents < MIN_CHARGE_CENTS) throw new HttpsError("invalid-argument", `Set a ${plan} price of at least ${dollars(MIN_CHARGE_CENTS)}.`);
+      if (cents >= listPriceCents(plan)) throw new HttpsError("invalid-argument", `The ${plan} promo price must be below the normal ${dollars(listPriceCents(plan))}.`);
+      fixedCents[plan] = cents;
+    }
+    doc.kind = "fixed";
+    doc.fixedCents = fixedCents;
+  } else {
+    const pct = Math.round(Number(data?.percentOff));
+    if (!Number.isFinite(pct) || pct < 1 || pct > 99) throw new HttpsError("invalid-argument", "Percent off must be between 1 and 99. For a free account, issue a comp.");
+    doc.kind = "percent";
+    doc.percentOff = pct;
+  }
+  const max = Math.round(Number(data?.maxRedemptions));
+  if (Number.isFinite(max) && max > 0) doc.maxRedemptions = max;
+  if (data?.expiresAt) {
+    const t = Date.parse(String(data.expiresAt).length === 10 ? `${data.expiresAt}T23:59:59Z` : data.expiresAt);
+    if (!Number.isFinite(t) || t < Date.now()) throw new HttpsError("invalid-argument", "The expiry date must be in the future.");
+    doc.expiresAt = Timestamp.fromMillis(t);
+  }
+  const ref = db.collection("promoCodes").doc(code);
+  await db.runTransaction(async (tx) => {
+    if ((await tx.get(ref)).exists) throw new HttpsError("already-exists", "That code already exists.");
+    tx.set(ref, doc);
+  });
+  logger.info("Promo created", { code, by: adminEmail });
+  return { ok: true, code };
+}
+
+async function adminGrantComp(data: any, adminEmail: string) {
+  const email = String(data?.email ?? "").trim().toLowerCase();
+  if (!email) throw new HttpsError("invalid-argument", "Enter the account's email.");
+  let target;
+  try {
+    target = await getAuth().getUserByEmail(email);
+  } catch {
+    throw new HttpsError("not-found", "No palette account uses that email yet. Ask them to sign up first, then issue the comp.");
+  }
+  const ref = db.collection("users").doc(target.uid);
+  const prev = (await ref.get()).data() ?? {};
+  const kind = data?.kind === "lifetime" ? "lifetime" : "until";
+  const paying = !prev.comp && (prev.tier === "pro-lifetime" || hasLiveRecurring(prev));
+
+  if (prev.tier === "pro-lifetime" && !prev.comp) throw new HttpsError("failed-precondition", "That account already bought lifetime Pro.");
+  if (kind === "until" && paying) throw new HttpsError("failed-precondition", "That account has a paid subscription. Cancel it first, or issue a lifetime comp.");
+
+  let until: Date | null = null;
+  if (kind === "until") {
+    until = new Date(`${String(data?.until ?? "").slice(0, 10)}T23:59:59Z`);
+    if (Number.isNaN(until.getTime()) || until.getTime() < Date.now()) throw new HttpsError("invalid-argument", "Pick an end date in the future.");
+  }
+
+  // A lifetime comp replaces a paid subscription: stop it renewing.
+  if (kind === "lifetime" && paying && prev.subscriptionId && prev.subscriptionStatus !== "canceling") {
+    try {
+      await squareClient().subscriptionsApi.cancelSubscription(prev.subscriptionId);
+    } catch (e: any) {
+      logger.error("Comp: could not cancel paid subscription", { uid: target.uid, message: e?.message });
+      throw new HttpsError("internal", "Could not cancel their paid subscription in Square, so the comp was not issued.");
+    }
+  }
+
+  await ref.set(
+    {
+      userId: target.uid,
+      email,
+      tier: kind === "lifetime" ? "pro-lifetime" : "pro-annual",
+      comp: true,
+      compBy: adminEmail,
+      compAt: FieldValue.serverTimestamp(),
+      // No Square subscription sits behind a comp, so webhooks never touch it.
+      subscriptionId: "",
+      // "canceling" makes the app show an end date and no cancel button.
+      subscriptionStatus: kind === "lifetime" ? "active" : "canceling",
+      pricingPlan: kind === "lifetime" ? "Complimentary lifetime" : "Complimentary Pro",
+      ...expiryFields(kind === "lifetime" ? expiryForPlan("lifetime") : (until as Date)),
+      promoRevertPending: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  logger.info("Comp granted", { uid: target.uid, kind, by: adminEmail });
+  return { ok: true };
+}
+
+async function adminRevokeComp(data: any, adminEmail: string) {
+  const uid = String(data?.uid ?? "");
+  if (!uid) throw new HttpsError("invalid-argument", "Missing account.");
+  const ref = db.collection("users").doc(uid);
+  const snap = await ref.get();
+  if (snap.get("comp") !== true) throw new HttpsError("failed-precondition", "That account is not on a comp. Paid plans are cancelled by the customer or in Square.");
+  await ref.set(
+    {
+      tier: "free",
+      comp: FieldValue.delete(),
+      subscriptionStatus: "cancelled",
+      pricingPlan: "",
+      ...expiryFields(new Date()),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  logger.info("Comp revoked", { uid, by: adminEmail });
+  return { ok: true };
+}
+
+export const adminApi = onCall(
+  { region: "us-central1", secrets: [SQUARE_ACCESS_TOKEN], cors: true, timeoutSeconds: 120 },
+  async (request) => {
+    const adminEmail = requireAdmin(request as any);
+    const action = String(request.data?.action ?? "");
+    const data = request.data ?? {};
+    try {
+      switch (action) {
+        case "whoami":
+          return { admin: true, email: adminEmail };
+        case "users":
+          return await adminUsers();
+        case "revenue":
+          return await adminRevenue(Math.min(366, Math.max(1, Math.round(Number(data.days) || 90))));
+        case "promos":
+          return await adminListPromos();
+        case "createPromo":
+          return await adminCreatePromo(data, adminEmail);
+        case "setPromoActive": {
+          const code = cleanCode(data.code);
+          const ref = db.collection("promoCodes").doc(code);
+          if (!(await ref.get()).exists) throw new HttpsError("not-found", "No such code.");
+          await ref.set({ active: data.active === true }, { merge: true });
+          return { ok: true };
+        }
+        case "grantComp":
+          return await adminGrantComp(data, adminEmail);
+        case "revokeComp":
+          return await adminRevokeComp(data, adminEmail);
+        default:
+          throw new HttpsError("invalid-argument", "Unknown action.");
+      }
+    } catch (err: any) {
+      if (err instanceof HttpsError) throw err;
+      const squareErrors = err?.result?.errors;
+      logger.error("adminApi failed", {
+        action,
+        message: err?.message,
+        errors: squareErrors?.map((x: any) => ({ category: x.category, code: x.code, detail: x.detail })),
+      });
+      throw new HttpsError("internal", squareErrors?.[0]?.detail || err?.message || "Something went wrong.");
     }
   }
 );

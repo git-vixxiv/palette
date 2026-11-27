@@ -62,7 +62,8 @@ interface AppContextType {
   purchasePro: (
     plan: 'monthly' | 'annual' | 'lifetime',
     token: string,
-    verificationToken?: string
+    verificationToken?: string,
+    promoCode?: string
   ) => Promise<void>;
   cancelSubscription: () => Promise<void>;
   refreshSubscription: () => Promise<void>;
@@ -300,7 +301,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const purchasePro = async (
     plan: 'monthly' | 'annual' | 'lifetime',
     token: string,
-    verificationToken?: string
+    verificationToken?: string,
+    promoCode?: string
   ) => {
     if (!user) {
       showToast("Please sign in before subscribing.", "error");
@@ -312,7 +314,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const callable = httpsCallable(functions, "createSubscription");
-    const res: any = await callable({ plan, token, verificationToken });
+    const res: any = await callable({ plan, token, verificationToken, ...(promoCode ? { promoCode } : {}) });
 
     if (res?.data?.success) {
       await fetchSubscription(user.uid);

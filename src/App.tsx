@@ -8,6 +8,7 @@ import { ScoringPanel } from "./components/ScoringPanel";
 import { CabinetPanel } from "./components/CabinetPanel";
 import { UpgradeModal } from "./components/UpgradeModal";
 import { LegalPage } from "./components/LegalPage";
+import { AdminPage } from "./components/AdminPage";
 import { Footer } from "./components/Footer";
 import { legalDocFromPath } from "./legal";
 import { Sparkles, Info, X } from "lucide-react";
@@ -17,11 +18,12 @@ function MainWorkbenchContent() {
   const { spinPalette, isSpinning, notification, clearToast } = useApp();
   // /terms, /privacy and /refunds render a document instead of the workbench.
   const legalDoc = legalDocFromPath(window.location.pathname);
+  const isAdmin = /^\/admin\/?$/i.test(window.location.pathname);
 
   // Bind Spacebar key listeners to easily spin colors like Coolors.co!
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space" && !legalDoc) {
+      if (e.code === "Space" && !legalDoc && !isAdmin) {
         const target = e.target as HTMLElement;
         // Check if user is typing in forms to avoid intercepting normal spacebar entries
         const isTyping =
@@ -60,7 +62,11 @@ function MainWorkbenchContent() {
       <Header />
 
       {/* Primary Workstation App Canvas */}
-      {legalDoc ? (
+      {isAdmin ? (
+        <main className="flex-1">
+          <AdminPage />
+        </main>
+      ) : legalDoc ? (
         <main className="flex-1 bg-white">
           <LegalPage doc={legalDoc} />
         </main>

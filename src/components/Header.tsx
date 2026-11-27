@@ -23,9 +23,6 @@ export const Header: React.FC = () => {
               <span className="text-xl font-display font-black tracking-tight text-slate-800 lowercase leading-none">palette</span>
               <span className="text-[11px] sm:text-xs font-bold font-sans lowercase leading-none mt-1 sm:mt-0" style={{ color: "#2589BD" }}>by vixxiv</span>
             </span>
-            <span className="text-[10px] uppercase font-mono font-bold tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm whitespace-nowrap hidden xl:inline-block">
-              Lab & Analyzer
-            </span>
           </div>
           <p className="text-[10px] text-slate-400 font-sans hidden xl:block whitespace-nowrap mt-0.5">
             Color science engine, WCAG contrast matrix compliance, and AI optimization
@@ -171,6 +168,12 @@ export const Header: React.FC = () => {
                           </div>
                         )}
 
+                        {/* Shown to the owner only; the server decides who is really an admin. */}
+                        {(user.email || "").toLowerCase() === "joe@vixxiv.com" && (
+                          <a href="/admin" className="block px-3 py-2 rounded text-xs font-sans font-bold text-slate-800 hover:bg-slate-50">
+                            Admin
+                          </a>
+                        )}
                         <a href="/refunds" className="block px-3 py-2 rounded text-xs font-sans text-slate-600 hover:bg-slate-50">
                           Plan, cancellation &amp; refunds
                         </a>

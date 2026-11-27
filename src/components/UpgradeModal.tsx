@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { initSquareCard, isSquareConfigured, SQUARE_ENV, SQUARE_LOAD_ERROR } from "../utils/square";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "../firebase";
 import { RefreshCw } from "lucide-react";
 
 export const UpgradeModal: React.FC = () => {
@@ -31,6 +33,35 @@ export const UpgradeModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [formError, setFormError] = useState("");
+  // Promo code: what the visitor typed, and the server's answer for the chosen plan.
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoInput, setPromoInput] = useState("");
+  const [promo, setPromo] = useState<null | { code: string; plan: string; priceCents: number; fullCents: number; duration: "first" | "forever" }>(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoBusy, setPromoBusy] = useState(false);
+
+  const applyPromo = async (plan = billingPlan, code = promoInput) => {
+    if (!code.trim() || !functions) return;
+    setPromoBusy(true);
+    setPromoError("");
+    try {
+      const res: any = await httpsCallable(functions, "validatePromo")({ code, plan });
+      setPromo({ ...res.data, plan });
+    } catch (err: any) {
+      setPromo(null);
+      setPromoError(/^(internal|unavailable)$/i.test(String(err?.message || "")) ? "Couldn't check that code just now. Please try again." : err?.message || "That promo code isn't valid.");
+    } finally {
+      setPromoBusy(false);
+    }
+  };
+  // A code is priced per plan, so re-check it whenever the plan changes.
+  const choosePlan = (plan: "monthly" | "annual" | "lifetime") => {
+    setBillingPlan(plan);
+    if (promo) {
+      setPromo(null);
+      applyPromo(plan, promo.code);
+    }
+  };
   const [cardReady, setCardReady] = useState(false);
   // Set when Square's card form could not be loaded; cleared by "Try again".
   const [loadError, setLoadError] = useState("");
@@ -96,6 +127,11 @@ export const UpgradeModal: React.FC = () => {
     priceText = "$50";
     intervalText = "lifetime (one-time charge)";
   }
+  // With a valid code for this plan, the amount charged today changes.
+  const promoOn = promo && promo.plan === billingPlan ? promo : null;
+  const fmt = (cents: number) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+  const fullPriceText = priceText;
+  if (promoOn) priceText = fmt(promoOn.priceCents);
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,7 +159,7 @@ export const UpgradeModal: React.FC = () => {
 
       // 2. Hand the single-use token to the backend, which performs the
       //    actual charge / subscription and grants the tier server-side.
-      await purchasePro(billingPlan, result.token);
+      await purchasePro(billingPlan, result.token, undefined, promoOn?.code);
 
       setSuccess(true);
       setTimeout(() => {
@@ -278,7 +314,7 @@ export const UpgradeModal: React.FC = () => {
                   <div className="grid grid-cols-3 gap-2 p-1 bg-slate-200/60 rounded-lg mb-6">
                     <button
                       type="button"
-                      onClick={() => setBillingPlan("monthly")}
+                      onClick={() => choosePlan("monthly")}
                       className={`py-2 px-1 text-xs font-sans font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer flex flex-col items-center justify-center ${billingPlan === "monthly" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
                     >
                       <span>Monthly</span>
@@ -286,7 +322,7 @@ export const UpgradeModal: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setBillingPlan("annual")}
+                      onClick={() => choosePlan("annual")}
                       className={`py-2 px-1 text-xs font-sans font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer flex flex-col items-center justify-center ${billingPlan === "annual" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
                     >
                       <span>Annual</span>
@@ -294,7 +330,7 @@ export const UpgradeModal: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setBillingPlan("lifetime")}
+                      onClick={() => choosePlan("lifetime")}
                       className={`py-2 px-1 text-xs font-sans font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer flex flex-col items-center justify-center ${billingPlan === "lifetime" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
                     >
                       <span>Lifetime</span>
@@ -309,12 +345,54 @@ export const UpgradeModal: React.FC = () => {
                     </p>
                     <div className="flex items-baseline gap-1.5 mt-1">
                       <span className="text-3xl font-display font-black text-slate-800">{priceText}</span>
-                      <span className="text-xs text-slate-500 font-sans">/ {intervalText}</span>
+                      {promoOn ? (
+                        <span className="text-xs text-slate-500 font-sans">
+                          <s>{fullPriceText}</s>{" "}
+                          {billingPlan === "lifetime"
+                            ? "one-time charge"
+                            : promoOn.duration === "first"
+                              ? `today, then ${fullPriceText} per ${billingPlan === "monthly" ? "month" : "year"}`
+                              : `per ${billingPlan === "monthly" ? "month" : "year"}, every renewal`}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-500 font-sans">/ {intervalText}</span>
+                      )}
                     </div>
                     {billingPlan !== "lifetime" && (
                       <p className="text-[10px] text-slate-400 mt-1.5 font-sans">
                         Auto-renews until cancelled. Cancel anytime from your account menu.
                       </p>
+                    )}
+                  </div>
+
+                  {/* Promo code */}
+                  <div className="mb-5 text-left -mt-3">
+                    {promoOn ? (
+                      <p className="text-xs text-emerald-700 font-sans font-semibold">
+                        Code {promoOn.code} applied.{" "}
+                        <button type="button" onClick={() => { setPromo(null); setPromoInput(""); }} className="underline font-normal text-slate-500 cursor-pointer">Remove</button>
+                      </p>
+                    ) : promoOpen ? (
+                      <div>
+                        <div className="flex gap-2">
+                          <input
+                            value={promoInput}
+                            onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPromo(); } }}
+                            placeholder="Promo code"
+                            aria-label="Promo code"
+                            className="flex-1 min-w-0 h-9 px-3 rounded-md bg-white border border-slate-300 text-sm font-mono uppercase text-slate-800 focus:outline-hidden focus:border-slate-900"
+                          />
+                          <button type="button" onClick={() => applyPromo()} disabled={promoBusy || !promoInput.trim()} className="h-9 px-3 rounded-md border border-slate-300 bg-white text-xs font-bold uppercase tracking-wider text-slate-700 cursor-pointer hover:bg-slate-100 disabled:opacity-50">
+                            {promoBusy ? "Checking" : "Apply"}
+                          </button>
+                        </div>
+                        {promoError && <p className="text-xs text-rose-600 mt-1.5">{promoError}</p>}
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setPromoOpen(true)} className="text-xs text-slate-500 underline cursor-pointer hover:text-slate-700">
+                        Have a promo code?
+                      </button>
                     )}
                   </div>
 
