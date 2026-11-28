@@ -348,8 +348,14 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
     setMsg(null);
     try {
       const fixedCents: Record<string, number> = {};
-      plans.forEach((p) => (fixedCents[p] = Math.round(parseFloat(fixed[p]) * 100)));
-      const res = await api("createPromo", { code, kind, compKind, compUntil, percentOff: Number(percentOff), fixedCents, plans, duration, maxRedemptions: Number(maxRedemptions) || null, expiresAt: expiresAt || null, note });
+      // Only a fixed-price code carries prices; blank fields must not be sent as NaN.
+      if (kind === "fixed") {
+        plans.forEach((p) => {
+          const cents = Math.round(parseFloat(fixed[p]) * 100);
+          if (Number.isFinite(cents)) fixedCents[p] = cents;
+        });
+      }
+      const res = await api("createPromo", { code, kind, compKind, compUntil, percentOff: kind === "percent" ? Number(percentOff) || 0 : null, fixedCents, plans, duration, maxRedemptions: Number(maxRedemptions) || null, expiresAt: expiresAt || null, note });
       setMsg({ kind: "ok", text: `Code ${res.code} is live.` });
       setCode("");
       setNote("");
@@ -464,7 +470,7 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button className={btn} disabled={busy || !plans.length}>{busy ? "Creating…" : "Create code"}</button>
-          <p className="text-xs text-slate-500">Each account can use a code once. The lowest price a card can be charged is $1; for a free account, issue a comp.</p>
+          <p className="text-xs text-slate-500">{kind === "comp" ? "Each account can use a code once." : "Each account can use a code once. The lowest price a card can be charged is $1; for free access, choose the Complimentary Pro type."}</p>
         </div>
         {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
       </form>
