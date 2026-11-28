@@ -563,7 +563,13 @@ export const AdminPage: React.FC = () => {
         setAllowed(true);
         load();
       })
-      .catch(() => !cancelled && setAllowed(false));
+      .catch(() => {
+        if (cancelled) return;
+        setAllowed(false);
+        // Not an admin (for example someone who just signed up here): send
+        // them to the app instead of leaving them on a dead end.
+        window.location.replace("/");
+      });
     return () => {
       cancelled = true;
     };

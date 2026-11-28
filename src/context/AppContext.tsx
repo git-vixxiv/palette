@@ -26,6 +26,9 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { track } from "@amplitude/unified";
 import { isAdminEmail } from "../legal";
+
+// Free accounts can build palettes of up to this many swatches; 5 to 10 need Pro.
+const FREE_MAX_SWATCHES = 4;
 import {
   auth,
   db,
@@ -432,8 +435,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Add column adds color elements dynamically to the palette layout up to 10
   const addColumn = () => {
-    if (userSubscription.tier === "free" && currentColors.length >= 5) {
-      showToast("The free plan includes up to 5 swatches. Go Pro for up to 10.", "error");
+    if (userSubscription.tier === "free" && currentColors.length >= FREE_MAX_SWATCHES) {
+      showToast(`The free plan includes up to ${FREE_MAX_SWATCHES} swatches. Go Pro for up to 10.`, "error");
       setShowUpgradeModal(true);
       return;
     }

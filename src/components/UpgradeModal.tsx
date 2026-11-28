@@ -261,7 +261,7 @@ export const UpgradeModal: React.FC = () => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-200">Up to 10 Color Swatches</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the 5-swatch limit and build palettes of up to 10 colors.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Go beyond the free plan's 4 swatches and build palettes of up to 10 colors.</p>
                 </div>
               </div>
 
