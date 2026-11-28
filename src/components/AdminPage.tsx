@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase";
 import { useApp } from "../context/AppContext";
-import { Crown, Gift, RefreshCw, Tag, Users, DollarSign, LogIn, AlertTriangle } from "lucide-react";
+import { Crown, Gift, RefreshCw, Tag, Users, DollarSign, AlertTriangle } from "lucide-react";
 
 /* The owner's back office. Every number and action comes from the adminApi
    Cloud Function, which checks the caller is a verified admin sign-in; this
@@ -529,7 +529,7 @@ const PromosTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload }
 
 /* -------------------------------- Page -------------------------------- */
 export const AdminPage: React.FC = () => {
-  const { user, openAuth } = useApp();
+  const { user, loadingAuth } = useApp();
   const [tab, setTab] = useState<"overview" | "users" | "promos">("overview");
   const [allowed, setAllowed] = useState<null | boolean>(null);
   const [users, setUsers] = useState<any>(null);
@@ -552,8 +552,11 @@ export const AdminPage: React.FC = () => {
 
   useEffect(() => {
     document.title = "Admin · palette";
+    if (loadingAuth) return; // the saved sign-in is still being restored
     if (!user) {
-      setAllowed(null);
+      // Signed out means not an admin. This address is only for admins who
+      // are already signed in, so send everyone else to the app.
+      window.location.replace("/");
       return;
     }
     let cancelled = false;
@@ -573,26 +576,11 @@ export const AdminPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [user, load]);
+  }, [user, loadingAuth, load]);
 
-  if (!user) {
-    return (
-      <div className="max-w-md mx-auto px-5 py-20 text-center">
-        <h1 className="text-2xl font-display font-black text-slate-900 mb-3">Admin</h1>
-        <p className="text-sm text-slate-600 mb-5">Sign in with the admin account to continue.</p>
-        <button onClick={() => openAuth("signin")} className={btn}><LogIn className="w-4 h-4" /> Sign in</button>
-      </div>
-    );
-  }
-  if (allowed === null) return <p className="text-center text-sm text-slate-500 py-20">Checking access…</p>;
-  if (!allowed) {
-    return (
-      <div className="max-w-md mx-auto px-5 py-20 text-center">
-        <h1 className="text-2xl font-display font-black text-slate-900 mb-3">Page not found</h1>
-        <a href="/" className="text-sm text-[#2589BD] underline">Back to palette</a>
-      </div>
-    );
-  }
+  // Nothing is shown until the server has confirmed an admin sign-in; anyone
+  // else is already being redirected to the home page.
+  if (!user || !allowed) return <p className="text-center text-sm text-slate-500 py-20">Checking access…</p>;
 
   const tabs = [
     { id: "overview", label: "Revenue", icon: DollarSign },
