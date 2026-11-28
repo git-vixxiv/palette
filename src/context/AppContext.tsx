@@ -573,11 +573,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user && isFirebaseConfigured && db) {
       const qPath = "palettes";
       try {
-        const palettesQuery = query(
-          collection(db, qPath),
-          where("userId", "==", user.uid),
-          orderBy("createdAt", "desc")
-        );
+        // Filter only, and sort in the browser. Filtering and ordering on
+        // different fields would need a composite Firestore index; without
+        // one the query fails outright and the library looks empty.
+        const palettesQuery = query(collection(db, qPath), where("userId", "==", user.uid));
         const snapshot = await getDocs(palettesQuery);
         const dataList: Palette[] = [];
         snapshot.forEach((docSnap) => {
@@ -592,8 +591,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updatedAt: data.updatedAt?.toDate?.() || new Date(),
           });
         });
+        dataList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setSavedPalettes(dataList);
       } catch (error) {
+        showToast("Your saved palettes couldn't be loaded. Refresh to try again.", "error");
         handleFirestoreError(error, OperationType.LIST, qPath);
       } finally {
         setLoadingPalettes(false);
