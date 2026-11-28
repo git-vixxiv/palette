@@ -1017,18 +1017,49 @@ const ROLE_LABEL: Record<ColorRole, string> = {
   "neutral-dark": "Dark",
 };
 
-/** Palette quality, 0..100, with the breakdown the scorecard displays. */
+/** One line of scorecard feedback: something that works, or something to change. */
+export interface ScoreNote {
+  kind: "good" | "fix";
+  text: string;
+}
+
+const HARMONY_NAME: Record<string, string> = {
+  analogous: "Analogous",
+  monochromatic: "Monochromatic",
+  complementary: "Complementary",
+  triadic: "Triadic",
+  tetradic: "Tetradic",
+  split: "Split-complementary",
+  random: "Random",
+};
+const HARMONY_MEANS: Record<string, string> = {
+  analogous: "keeps every hue close together on the color wheel",
+  monochromatic: "uses a single hue in different shades",
+  complementary: "pairs hues from opposite sides of the color wheel",
+  triadic: "uses three hues spaced evenly around the color wheel",
+  tetradic: "uses four hues in two opposite pairs",
+  split: "pairs one hue with the two beside its opposite",
+};
+
+/**
+ * Palette quality, 0..100, with the breakdown the scorecard displays.
+ *
+ * `notes` explains the score in plain language. Every line is produced by a
+ * measurement of the current colours (no AI and no canned praise): a "fix"
+ * names the problem and what to do about it, a "good" names what is working.
+ */
 export function scorePalette(
   colors: ColorItem[],
   harmonyMode: HarmonyMode
 ): {
   score: number;
   breakdown: { roles: number; contrast: number; harmony: number };
+  notes: ScoreNote[];
   tips: string[];
 } {
   const resolved = resolveRoles(colors);
   const a = analyze(resolved, harmonyMode);
-  const tips: { weight: number; text: string }[] = [];
+  const fixes: { weight: number; text: string }[] = [];
   const has = (role: ColorRole) => resolved.some((c) => c.role === role);
   const hasNeutral = has("neutral-light") || has("neutral-dark");
 
@@ -1037,44 +1068,84 @@ export function scorePalette(
   const contrast = Math.round(40 * (0.65 * a.contrast + 0.35 * a.lightness));
   const harmony = Math.round(30 * (0.75 * a.harmony + 0.15 * a.distinct + 0.1 * a.hierarchy));
 
-  if (!has("primary")) tips.push({ weight: 0.9, text: "Assign one colour the Primary role so the palette has a clear lead." });
-  if (!hasNeutral) tips.push({ weight: 0.8, text: "Add a Light or Dark neutral for backgrounds and text." });
+  // --- Roles ---
+  if (!has("primary")) fixes.push({ weight: 0.9, text: "No color is strong enough to lead. Add or spin one mid-tone, saturated color to act as the brand color." });
+  if (!hasNeutral) fixes.push({ weight: 0.8, text: "There is no near-white or near-black. Add one so the palette has a background and a text color." });
 
+  let weakRoles = 0;
   a.swatches.forEach((s, i) => {
     const fit = a.roleFits[i];
     if (fit >= 0.6) return;
-    const name = `${s.hex} (${ROLE_LABEL[s.role]})`;
+    weakRoles++;
+    const name = `${s.hex.toUpperCase()} (${ROLE_LABEL[s.role]})`;
     let text = "";
-    if (s.role === "neutral-light") text = s.L < 0.9 ? `${name} is too dark for a light neutral. Aim for a near-white.` : `${name} is too saturated for a neutral. Reduce its saturation.`;
-    else if (s.role === "neutral-dark") text = s.L > 0.35 ? `${name} is too light for a dark neutral. Aim for a near-black.` : `${name} is too saturated for a neutral. Reduce its saturation.`;
-    else if (s.role === "accent") text = `${name} is too muted to work as an accent. Make it more saturated.`;
-    else if (s.role === "primary") text = s.C < 0.07 ? `${name} is too grey to lead the palette. Give the primary more saturation.` : `${name} is too ${s.L > 0.8 ? "light" : "dark"} to lead the palette. Move it toward the mid-range.`;
-    else text = `${name} is too ${s.L > 0.9 ? "light" : "dark"} to be useful as a secondary.`;
-    tips.push({ weight: 0.75 * (1 - fit), text });
+    if (s.role === "neutral-light") text = s.L < 0.9 ? `${name} is too dark to be a light background. Lighten it toward white.` : `${name} is too saturated for a background. Tone it down toward gray.`;
+    else if (s.role === "neutral-dark") text = s.L > 0.35 ? `${name} is too light to be a dark text color. Darken it toward black.` : `${name} is too saturated for a dark neutral. Tone it down toward gray.`;
+    else if (s.role === "accent") text = `${name} is too muted to stand out as an accent. Make it more saturated.`;
+    else if (s.role === "primary") text = s.C < 0.07 ? `${name} is too gray to lead the palette. Give it more saturation.` : `${name} is too ${s.L > 0.8 ? "light" : "dark"} to lead the palette. Move it toward a mid-tone.`;
+    else text = `${name} is too ${s.L > 0.9 ? "light" : "dark"} to be useful as a secondary color.`;
+    fixes.push({ weight: 0.75 * (1 - fit), text });
   });
 
-  if (a.textRatio < 4.5) tips.push({ weight: 0.7, text: `No pair reaches 4.5:1 for body text (best is ${a.textRatio.toFixed(1)}:1). Push the light and dark colours further apart.` });
-  else if (a.bestRatio < 7) tips.push({ weight: 0.3, text: `Strongest contrast is ${a.bestRatio.toFixed(1)}:1. A pair above 7:1 gives headlines more punch.` });
+  // --- Contrast ---
+  if (a.textRatio < 4.5) fixes.push({ weight: 0.7, text: `No two colors are far enough apart for body text: the best pair is ${a.textRatio.toFixed(1)}:1 and 4.5:1 is the minimum. Make the lightest color lighter or the darkest darker.` });
+  else if (a.bestRatio < 7) fixes.push({ weight: 0.3, text: `The strongest pair reaches ${a.bestRatio.toFixed(1)}:1, enough for body text. Getting a pair past 7:1 would make small text easier to read.` });
 
   if (a.worstClash && a.worstClash.value > 0.35) {
     const x = a.swatches[a.worstClash.i];
     const y = a.swatches[a.worstClash.j];
-    tips.push({ weight: 0.65 * a.worstClash.value, text: `${x.hex} and ${y.hex} are different hues at the same lightness, so they compete. Make one clearly lighter or darker.` });
+    fixes.push({ weight: 0.65 * a.worstClash.value, text: `${x.hex.toUpperCase()} and ${y.hex.toUpperCase()} are different hues at the same brightness, so they fight for attention side by side. Make one clearly lighter or darker.` });
   }
   if (a.closest && a.closest.value < 0.04) {
-    tips.push({ weight: 0.5, text: `${a.swatches[a.closest.i].hex} and ${a.swatches[a.closest.j].hex} are nearly the same colour. Separate them or drop one.` });
+    fixes.push({ weight: 0.5, text: `${a.swatches[a.closest.i].hex.toUpperCase()} and ${a.swatches[a.closest.j].hex.toUpperCase()} are almost the same color. Change one, or remove it.` });
   }
-  if (a.fit < 0.6 && harmonyMode !== "random") tips.push({ weight: 0.45, text: `The hues stray from a ${harmonyMode} scheme. Lock the colours you like and spin the rest.` });
-  else if (a.coverage < 0.75 && harmonyMode !== "random") tips.push({ weight: 0.35, text: `This ${harmonyMode} scheme is only using part of its hue range. Spin an unlocked colour to complete it.` });
-  if (a.hierarchy < 0.75) tips.push({ weight: 0.4, text: "The accent is not the most vivid colour here. Either boost it or calm the colour that outshines it." });
-  if (a.lightness < 0.55) tips.push({ weight: 0.4, text: "The colours sit at similar lightness. A wider light-to-dark range reads as more polished." });
+  if (a.lightness < 0.55) fixes.push({ weight: 0.4, text: "The colors are all similar in brightness. A wider range from light to dark gives a design more depth." });
+
+  // --- Harmony: how well the hues follow the rule that is selected ---
+  let harmonyIssue = false;
+  if (harmonyMode !== "random") {
+    const name = HARMONY_NAME[harmonyMode];
+    if (a.fit < 0.6) {
+      harmonyIssue = true;
+      // Which rule do these colours actually follow best?
+      const others = (["analogous", "monochromatic", "complementary", "split", "triadic", "tetradic"] as HarmonyMode[]).filter((m) => m !== harmonyMode);
+      let best: { mode: HarmonyMode; fit: number } | null = null;
+      for (const m of others) {
+        const f = analyze(resolved, m).fit;
+        if (!best || f > best.fit) best = { mode: m, fit: f };
+      }
+      const fix = best && best.fit >= 0.75
+        ? `They fit ${HARMONY_NAME[best.mode]} well: switch to that rule to match what you have, or lock the colors you want to keep and press Spin to rebuild the rest as ${name}.`
+        : `To follow it, lock the colors you want to keep and press Spin to rebuild the rest.`;
+      fixes.push({
+        weight: 0.45,
+        text: `The harmony rule is set to ${name}, which ${HARMONY_MEANS[harmonyMode]}. Your colors don't, so Harmony Rule Fit is ${harmony} of 30. That's fine if you like them as they are. ${fix}`,
+      });
+    } else if (a.coverage < 0.75) {
+      harmonyIssue = true;
+      fixes.push({ weight: 0.35, text: `These colors use only part of what a ${name} scheme offers. Spin an unlocked swatch to bring in the missing hue.` });
+    }
+  }
+  if (a.hierarchy < 0.75) fixes.push({ weight: 0.4, text: "The accent is not the most vivid color here, so it won't draw the eye. Make it more saturated, or tone down the color that outshines it." });
 
   const score = Math.max(0, Math.min(100, roles + contrast + harmony));
-  const ordered = tips.sort((x, y) => y.weight - x.weight).map((t) => t.text);
-  if (score >= 90) ordered.push("Excellent: clear roles, strong contrast and a coherent scheme.");
-  else if (score >= 75 && ordered.length < 2) ordered.push("Solid palette. Small adjustments to the points above would lift it further.");
 
-  return { score, breakdown: { roles, contrast, harmony }, tips: ordered.slice(0, 4) };
+  // --- What is working, each tied to a measurement ---
+  const goods: string[] = [];
+  if (a.textRatio >= 7) goods.push(`Text will be easy to read: your lightest and darkest colors reach ${a.textRatio.toFixed(1)}:1, above the 7:1 that the strictest accessibility level (WCAG AAA) asks for.`);
+  else if (a.textRatio >= 4.5) goods.push(`Text is readable: your best light and dark pair reaches ${a.textRatio.toFixed(1)}:1, above the 4.5:1 minimum (WCAG AA).`);
+  if (has("primary") && hasNeutral && weakRoles === 0) goods.push("Every color has a clear job: one leads, and there is a light or dark neutral for backgrounds and text.");
+  if (harmonyMode !== "random" && !harmonyIssue) goods.push(`The hues follow the ${HARMONY_NAME[harmonyMode]} rule you selected.`);
+  if (a.distinct >= 0.9 && colors.length >= 3) goods.push("All of the colors are easy to tell apart.");
+
+  const ordered = fixes.sort((x, y) => y.weight - x.weight).map((t) => t.text);
+  const shownFixes = ordered.slice(0, 3);
+  const notes: ScoreNote[] = [
+    ...shownFixes.map((text) => ({ kind: "fix" as const, text })),
+    ...goods.slice(0, Math.max(1, 4 - shownFixes.length)).map((text) => ({ kind: "good" as const, text })),
+  ];
+
+  return { score, breakdown: { roles, contrast, harmony }, notes, tips: notes.map((n) => n.text) };
 }
 
 /**

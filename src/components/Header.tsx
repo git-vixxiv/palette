@@ -182,7 +182,11 @@ export const Header: React.FC = () => {
                         <button
                           onClick={() => {
                             setMenuOpen(false);
-                            logout();
+                            // Signing out of the admin area returns to the main page.
+                            const leaveAdmin = /^\/admin/i.test(window.location.pathname);
+                            Promise.resolve(logout()).finally(() => {
+                              if (leaveAdmin) window.location.assign("/");
+                            });
                           }}
                           className="w-full text-left flex items-center space-x-2 px-3 py-2 rounded text-xs font-sans font-bold uppercase tracking-wider text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
                         >

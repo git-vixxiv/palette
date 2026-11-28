@@ -843,13 +843,30 @@ export const PaletteVisualizer: React.FC = () => {
               <span className="text-[11px] font-sans text-slate-500">{u.job}</span>
             </span>
           ))}
-          {theme.derived.map((d) => (
-            <span key={`derived-${d.job}`} className="flex items-center gap-2 border border-dashed border-slate-300 rounded-md pl-1 pr-2.5 py-1" title="Your palette has no color for this job, so the preview derived one from your colors">
-              <span className="w-5 h-5 rounded border border-black/10 shrink-0" style={{ backgroundColor: d.hex }} />
-              <span className="text-[11px] font-sans text-slate-500">{d.job} (derived, not in your palette)</span>
-            </span>
-          ))}
         </div>
+
+        {theme.derived.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-dashed border-slate-300">
+            <p className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+              Added by the preview (not in your palette)
+            </p>
+            {theme.derivedWhy.map((why) => (
+              <p key={why} className="text-xs font-sans text-slate-600 mb-2 max-w-4xl">{why}</p>
+            ))}
+            <div className="flex flex-wrap gap-2">
+              {theme.derived.map((d, i) => (
+                <span key={`derived-${d.hex}-${i}`} className="flex items-center gap-2 border border-dashed border-slate-300 rounded-md pl-1 pr-2.5 py-1">
+                  <span className="w-5 h-5 rounded border border-black/10 shrink-0" style={{ backgroundColor: d.hex }} />
+                  <span className="text-[11px] font-mono font-bold text-slate-700 uppercase">{d.hex}</span>
+                  <span className="text-[11px] font-sans text-slate-500">{d.job}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] font-sans text-slate-500 mt-3">
+          The soft grays used for card backgrounds, secondary text and borders are blended from your background and text colors.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

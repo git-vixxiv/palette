@@ -497,7 +497,7 @@ export const PaletteGenerator: React.FC = () => {
         </div>
 
         {/* Color Science Harmony Selection */}
-        <div className="flex flex-col lg:flex-row items-center gap-3 sm:gap-4 w-full lg:w-auto">
+        <div className="flex flex-col xl:flex-row items-center gap-3 sm:gap-4 w-full lg:flex-1 lg:min-w-0">
           <div className="hidden sm:flex items-center gap-1.5 shrink-0">
             <Sparkles className="w-4 h-4" style={{ color: "#2589BD" }} />
             <span className="text-[11px] font-sans font-extrabold text-slate-400 uppercase tracking-widest">
@@ -530,12 +530,12 @@ export const PaletteGenerator: React.FC = () => {
           {/* Desktop Harmony representation: Beautiful multi-row interactive swatches */}
           <div className="hidden sm:flex flex-col gap-2.5 items-center w-full">
             {/* Top Row: 4 buttons */}
-            <div className="flex flex-wrap justify-center gap-2 w-full">
+            <div className="grid grid-cols-4 gap-2 w-full">
               {firstRowModes.map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setHarmonyMode(mode)}
-                  className="flex flex-col items-center justify-center px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider border cursor-pointer min-w-[110px] transition-all"
+                  className="flex flex-col items-center justify-center px-1.5 py-2.5 rounded-lg text-[10px] xl:text-[11px] font-bold uppercase tracking-wider border cursor-pointer min-w-0 transition-all"
                   style={
                     harmonyMode === mode
                       ? { backgroundColor: "#faf8f3", borderColor: "#d1c69e", color: "#1a1a1a", borderWidth: "1.5px", boxShadow: "0 1px 3px rgba(209, 198, 158, 0.2)" }
@@ -589,12 +589,12 @@ export const PaletteGenerator: React.FC = () => {
             </div>
 
             {/* Bottom Row: 3 buttons centered */}
-            <div className="flex flex-wrap justify-center gap-2 w-full">
+            <div className="grid grid-cols-3 gap-2 w-full">
               {secondRowModes.map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setHarmonyMode(mode)}
-                  className="flex flex-col items-center justify-center px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider border cursor-pointer min-w-[110px] transition-all"
+                  className="flex flex-col items-center justify-center px-1.5 py-2.5 rounded-lg text-[10px] xl:text-[11px] font-bold uppercase tracking-wider border cursor-pointer min-w-0 transition-all"
                   style={
                     harmonyMode === mode
                       ? { backgroundColor: "#faf8f3", borderColor: "#d1c69e", color: "#1a1a1a", borderWidth: "1.5px", boxShadow: "0 1px 3px rgba(209, 198, 158, 0.2)" }
@@ -644,7 +644,7 @@ export const PaletteGenerator: React.FC = () => {
         {/* Action Spin and Save Launch Buttons - Formatted as horizontal single-row stream on mobile */}
         <div className="hidden sm:flex flex-row items-center justify-end gap-4 w-full lg:w-auto shrink-0 lg:mt-0">
           
-          <div className="flex flex-row sm:flex-col items-stretch gap-1.5 sm:gap-2 flex-1 sm:flex-initial sm:w-36">
+          <div className="flex flex-row sm:flex-col items-stretch gap-1.5 sm:gap-2 flex-1 sm:flex-initial sm:w-44">
             {/* Add Color Column */}
             {currentColors.length < 10 && (
               <button
@@ -696,11 +696,11 @@ export const PaletteGenerator: React.FC = () => {
             onClick={spinPalette}
             disabled={isSpinning}
             style={{ backgroundColor: "#059669", borderColor: "#047857" }}
-            className="py-2.5 sm:w-28 sm:h-28 sm:rounded-full rounded-lg px-4 sm:px-0 hover:brightness-110 active:scale-90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-xs sm:text-sm tracking-widest uppercase shadow-lg transition-all flex sm:flex-col items-center justify-center gap-1 cursor-pointer border-2 select-none shrink-0"
+            className="py-2.5 sm:w-36 sm:h-36 sm:rounded-full rounded-lg px-4 sm:px-0 hover:brightness-110 active:scale-90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-xs sm:text-sm tracking-widest uppercase shadow-lg transition-all flex sm:flex-col items-center justify-center gap-1 cursor-pointer border-2 select-none shrink-0"
             title="SPIN - Tap here or press spacebar!"
           >
-            <RefreshCw className={`w-3.5 h-3.5 sm:w-7 sm:h-7 text-white ${isSpinning ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline font-sans font-extrabold text-[10px] sm:text-xs tracking-widest sm:mt-1">SPIN</span>
+            <RefreshCw className={`w-3.5 h-3.5 sm:w-9 sm:h-9 text-white ${isSpinning ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline font-sans font-extrabold text-[10px] sm:text-base tracking-widest sm:mt-1">SPIN</span>
           </button>
         </div>
       </div>

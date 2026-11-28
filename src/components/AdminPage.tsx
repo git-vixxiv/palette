@@ -566,7 +566,7 @@ export const AdminPage: React.FC = () => {
 
   const tabs = [
     { id: "overview", label: "Revenue", icon: DollarSign },
-    { id: "users", label: "Users & comps", icon: Users },
+    { id: "users", label: "Subscribers", icon: Users },
     { id: "promos", label: "Promo codes", icon: Tag },
   ] as const;
 

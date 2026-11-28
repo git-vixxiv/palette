@@ -34,6 +34,8 @@ export interface PreviewTheme {
   usage: { hex: string; job: string }[];
   /** Colours the preview needed but the palette did not supply. */
   derived: { hex: string; job: string }[];
+  /** Plain-language reasons for each kind of colour in `derived`. */
+  derivedWhy: string[];
 }
 
 const isNeutral = (c: { role: string }) => c.role === "neutral-light" || c.role === "neutral-dark";
@@ -86,8 +88,11 @@ export function buildPreviewTheme(input: ColorItem[], dark: boolean): PreviewThe
   });
   // Charts need at least four steps; extend with tints of the primary.
   let step = 1;
+  const ownSeries = series.length;
+  const tints: string[] = [];
   while (series.length < 4) {
-    series.push(oklchToHex(Math.min(0.9, Math.max(0.3, p.L + 0.14 * step * (p.L > 0.6 ? -1 : 1))), p.C * 0.7, p.h));
+    tints.push(oklchToHex(Math.min(0.9, Math.max(0.3, p.L + 0.14 * step * (p.L > 0.6 ? -1 : 1))), p.C * 0.7, p.h));
+    series.push(tints[tints.length - 1]);
     step++;
   }
 
@@ -111,10 +116,30 @@ export function buildPreviewTheme(input: ColorItem[], dark: boolean): PreviewThe
     { hex: ink, job: "Text" },
     { hex: secondary, job: "Supporting areas" },
   ].filter((d) => !inPalette(d.hex));
+  tints.forEach((hex) => {
+    if (!inPalette(hex) && !derived.some((d) => same(d.hex, hex))) derived.push({ hex, job: `Tint of ${primary.toUpperCase()}` });
+  });
+
+  // Say why each addition exists, so nothing on screen is a mystery.
+  const derivedWhy: string[] = [];
+  if (tints.length) {
+    derivedWhy.push(
+      `Your palette has ${ownSeries} ${ownSeries === 1 ? "color that isn't" : "colors that aren't"} a neutral, and these layouts need 4 to tell chart bars, icons and shapes apart. The preview fills the gap with lighter or darker tints of your brand color ${primary.toUpperCase()}, the way a designer would stretch a small palette. Add more swatches and your own colors take their place.`
+    );
+  }
+  if (!inPalette(bg) || !inPalette(ink)) {
+    derivedWhy.push(
+      `Your palette has no ${!inPalette(bg) && !inPalette(ink) ? "near-white or near-black" : (dark ? !inPalette(bg) : !inPalette(ink)) ? "near-black" : "near-white"} neutral, so the preview adds one, lightly tinted with your brand color, for the ${!inPalette(bg) && !inPalette(ink) ? "page and text" : !inPalette(bg) ? "page" : "text"}.`
+    );
+  }
+  if (!inPalette(secondary) && !tints.some((t) => same(t, secondary))) {
+    derivedWhy.push("Your palette has no supporting color, so the preview uses a softer version of your brand color for secondary areas.");
+  }
 
   return {
     usage,
     derived,
+    derivedWhy,
     dark,
     bg,
     surface,

@@ -542,7 +542,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const spinPalette = () => {
     if (currentColors.every((c) => c.locked)) {
-      showToast("Every colour is locked. Unlock at least one to spin.", "info");
+      showToast("Every color is locked. Unlock at least one to spin.", "info");
       return;
     }
     regenerateUnlocked();

@@ -2,13 +2,13 @@ import React from "react";
 import { useApp } from "../context/AppContext";
 import { getContrastRatio } from "../utils/colorUtils";
 import { scorePalette, suggestRoles } from "../utils/paletteEngine";
-import { Award, CheckCircle, BookOpen, ThumbsUp, HelpCircle, Activity } from "lucide-react";
+import { Award, CheckCircle, BookOpen, ThumbsUp, HelpCircle, Activity, AlertTriangle } from "lucide-react";
 
 export const ScoringPanel: React.FC = () => {
   const { currentColors, harmonyMode, setColors, showToast } = useApp();
 
   // Dynamically calculate quality metrics referencing current state
-  const { score, breakdown, tips } = scorePalette(currentColors, harmonyMode);
+  const { score, breakdown, notes } = scorePalette(currentColors, harmonyMode);
 
   // Assign each colour the role it is actually suited to (near-whites and
   // near-blacks become neutrals, the most vivid spare colour the accent...).
@@ -47,10 +47,10 @@ export const ScoringPanel: React.FC = () => {
       {/* Title */}
       <div className="border-l-4 pl-4 space-y-1" style={{ borderLeftColor: "#d1c69e" }}>
         <h2 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-slate-800 flex items-center gap-2">
-          <span>Aesthetic Science Scorecard</span>
+          <span>Palette Scorecard</span>
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 font-sans">
-          Our algorithm checks the absolute visual hierarchy, contrast metrics, and color wheel distances to grade usability.
+          A score out of 100 for how well these colors work together: whether each has a clear job, whether text will be readable, and how closely they follow the harmony rule you picked.
         </p>
       </div>
 
@@ -61,10 +61,10 @@ export const ScoringPanel: React.FC = () => {
           
           <div className="space-y-1 mt-2">
             <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest block">
-              Composite Aesthetic Grade
+              Overall score
             </span>
             <span className="text-base font-display font-bold text-slate-800 block capitalize">
-              {score >= 90 ? "Master Composition (A+)" : score >= 75 ? "Highly Readable (B)" : score >= 60 ? "Functional (C)" : "Needs Work (D)"}
+              {score >= 90 ? "Excellent (A)" : score >= 75 ? "Good (B)" : score >= 60 ? "Usable (C)" : "Needs work (D)"}
             </span>
           </div>
 
@@ -171,7 +171,7 @@ export const ScoringPanel: React.FC = () => {
             <div className="flex justify-between items-center">
               <h4 className="text-xs font-sans font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                 <Activity className="w-3.5 h-3.5 animate-pulse" style={{ color: "#2589BD" }} />
-                Optimization Review
+                What's working, and what to change
               </h4>
               {score < 90 && (
                 <button
@@ -184,22 +184,25 @@ export const ScoringPanel: React.FC = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {tips.map((tip, idx) => (
+            <div className="grid grid-cols-1 gap-2">
+              {notes.map((note, idx) => (
                 <div
                   key={idx}
-                  className="flex items-start space-x-2 text-xs text-slate-600 bg-slate-50 border border-slate-150 p-3 rounded"
+                  className={`flex items-start gap-2.5 text-xs p-3 rounded border ${
+                    note.kind === "fix" ? "bg-amber-50 border-amber-200 text-slate-700" : "bg-emerald-50/60 border-emerald-200 text-slate-700"
+                  }`}
                 >
-                  <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: "#2589BD" }} />
-                  <span className="font-sans font-medium">{tip}</span>
+                  {note.kind === "fix" ? (
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                  )}
+                  <span className="font-sans font-medium leading-relaxed">
+                    <span className="font-bold">{note.kind === "fix" ? "To improve: " : "Working: "}</span>
+                    {note.text}
+                  </span>
                 </div>
               ))}
-              {tips.length === 0 && (
-                <div className="col-span-2 text-xs text-emerald-750 font-sans font-bold bg-emerald-50 p-4 rounded flex items-center gap-2 border border-emerald-150">
-                  <ThumbsUp className="w-4 h-4 text-emerald-500 animate-bounce" />
-                  No critique! This color scheme is perfectly calibrated for production launch.
-                </div>
-              )}
             </div>
           </div>
 
