@@ -61,6 +61,31 @@ export const CORNER_STYLES: Record<CornerStyle, { label: string; sm: number; md:
   round: { label: "Round", sm: 10, md: 16, lg: 24 },
 };
 
+export type IconSet = "lucide" | "phosphor" | "heroicons" | "material";
+export const ICON_SETS: Record<IconSet, { label: string; url: string; note: string }> = {
+  lucide: { label: "Lucide", url: "https://lucide.dev", note: "Outline icons with a 2px stroke and rounded joins. 24px grid." },
+  phosphor: { label: "Phosphor", url: "https://phosphoricons.com", note: "A flexible family with thin to bold and filled weights. Use Regular by default." },
+  heroicons: { label: "Heroicons", url: "https://heroicons.com", note: "Outline for navigation and actions, solid for small or emphasised icons." },
+  material: { label: "Material Symbols", url: "https://fonts.google.com/icons", note: "Use the Rounded style, weight 400, unfilled by default." },
+};
+
+/** Everything the owner chooses in the export screen. */
+export interface DesignSystemOptions {
+  name: string;
+  typeStyle: TypeStyle;
+  cornerStyle: CornerStyle;
+  iconSet: IconSet;
+  /** A live site or product to use as a reference, if the owner gave one. */
+  url?: string;
+  /** The owner's own words on tone of voice, if given. */
+  voice?: string;
+  /** Which of the three choices the owner actually made, as opposed to leaving the default. */
+  chosen: { type: boolean; corners: boolean; icons: boolean };
+}
+
+const BREAKPOINTS: [string, number][] = [["sm", 640], ["md", 768], ["lg", 1024], ["xl", 1280]];
+const MOTION: [string, string][] = [["duration-fast", "120ms"], ["duration-base", "200ms"], ["duration-slow", "320ms"], ["ease-standard", "cubic-bezier(0.2, 0, 0, 1)"], ["ease-out", "cubic-bezier(0, 0, 0.2, 1)"]];
+
 const TYPE_SCALE: { token: string; label: string; size: number; line: number; weight: number; heading: boolean }[] = [
   { token: "display", label: "Display", size: 48, line: 1.1, weight: 700, heading: true },
   { token: "h1", label: "Heading 1", size: 36, line: 1.15, weight: 700, heading: true },
@@ -106,9 +131,32 @@ export interface DesignSystem {
   type: (typeof TYPE_STYLES)[TypeStyle];
   corners: (typeof CORNER_STYLES)[CornerStyle];
   shadows: { token: string; value: string }[];
+  /** Hover and pressed versions of the main button fill, and the focus ring. */
+  states: { primaryHover: string; primaryPressed: string; focusRing: string };
+  /** The dark theme: every surface, text, border, link, status and shadow value. */
+  dark: {
+    bg: string;
+    surface: string;
+    ink: string;
+    muted: string;
+    line: string;
+    link: string;
+    linkRatio: number;
+    status: { token: string; soft: string; onSoft: string }[];
+    shadows: { token: string; value: string }[];
+    focusRing: string;
+  };
+  icons: (typeof ICON_SETS)[IconSet];
+  options: DesignSystemOptions;
 }
 
-export function buildDesignSystem(colors: ColorItem[], mode: HarmonyMode, name: string, typeStyle: TypeStyle, cornerStyle: CornerStyle): DesignSystem {
+const rgbOf = (hex: string) => {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  return m ? `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}` : "0, 0, 0";
+};
+
+export function buildDesignSystem(colors: ColorItem[], mode: HarmonyMode, options: DesignSystemOptions): DesignSystem {
+  const { name, typeStyle, cornerStyle } = options;
   const named = nameColors(colors);
   const theme = buildPreviewTheme(colors, false);
   const bg = up(theme.bg);
@@ -157,17 +205,65 @@ export function buildDesignSystem(colors: ColorItem[], mode: HarmonyMode, name: 
     return { token, label, hex, on: best(hex, "#FFFFFF", ink), soft, onSoft: up(oklchToHex(0.3, strength * 0.8, hue)) };
   });
 
-  const k = (() => {
-    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(ink);
-    return m ? `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}` : "0, 0, 0";
-  })();
+  const k = rgbOf(ink);
   const shadows = [
     { token: "sm", value: `0 1px 2px rgba(${k}, 0.08)` },
     { token: "md", value: `0 4px 12px rgba(${k}, 0.10)` },
     { token: "lg", value: `0 12px 32px rgba(${k}, 0.14)` },
   ];
 
+  // Interaction states for the main button: a step darker on hover, two when
+  // pressed (lighter instead when the fill is already very dark).
+  const dir = p.L < 0.35 ? 1 : -1;
+  const states = {
+    primaryHover: up(oklchToHex(p.L + dir * 0.06, p.C, p.h)),
+    primaryPressed: up(oklchToHex(p.L + dir * 0.12, p.C, p.h)),
+    focusRing: `0 0 0 2px ${bg}, 0 0 0 4px ${link.hex}`,
+  };
+
+  // Dark theme: its own surfaces, text, borders, link and status backgrounds.
+  const dk = buildPreviewTheme(colors, true);
+  const dbg = up(dk.bg);
+  // The dark link stays in the same color family as the light one: the same
+  // palette color if it is readable on the dark background, otherwise a
+  // lighter version of it.
+  const linkBase = link.derived || link.hex === primary ? primary : link.hex;
+  const lb = hexToOklch(linkBase);
+  let dLink = linkBase;
+  let dL = Math.max(lb.L, 0.6);
+  while (getContrastRatio(dLink, dbg) < 4.5 && dL < 0.93) {
+    dLink = up(oklchToHex(dL, lb.C, lb.h));
+    dL += 0.03;
+  }
+  const dark = {
+    bg: dbg,
+    surface: up(dk.surface),
+    ink: up(dk.ink),
+    muted: up(dk.muted),
+    line: up(dk.line),
+    link: dLink,
+    linkRatio: getContrastRatio(dLink, dbg),
+    status: (
+      [
+        ["success", 150],
+        ["warning", 75],
+        ["danger", 27],
+        ["info", 245],
+      ] as [string, number][]
+    ).map(([token, hue]) => ({ token, soft: up(oklchToHex(0.28, 0.05, hue)), onSoft: up(oklchToHex(0.9, 0.07, hue)) })),
+    shadows: [
+      { token: "sm", value: "0 1px 2px rgba(0, 0, 0, 0.40)" },
+      { token: "md", value: "0 4px 12px rgba(0, 0, 0, 0.45)" },
+      { token: "lg", value: "0 12px 32px rgba(0, 0, 0, 0.55)" },
+    ],
+    focusRing: `0 0 0 2px ${dbg}, 0 0 0 4px ${dLink}`,
+  };
+
   return {
+    states,
+    dark,
+    icons: ICON_SETS[options.iconSet],
+    options,
     name,
     mode,
     named,
@@ -243,6 +339,35 @@ function tokensCss(ds: DesignSystem): string {
   add("  --radius-pill: 999px;");
   add("  --border-width: 1px;");
   ds.shadows.forEach((s) => add(`  --shadow-${s.token}: ${s.value};`));
+  add();
+  add("  /* Interaction states */");
+  add(`  --color-primary-hover: ${ds.states.primaryHover};`);
+  add(`  --color-primary-pressed: ${ds.states.primaryPressed};`);
+  add(`  --focus-ring: ${ds.states.focusRing};`);
+  add("  --opacity-disabled: 0.45;");
+  add();
+  add("  /* Motion */");
+  MOTION.forEach(([k, v]) => add(`  --${k}: ${v};`));
+  add();
+  add("  /* Layout. Breakpoints: " + BREAKPOINTS.map(([k, v]) => `${k} ${v}px`).join(", ") + " */");
+  add("  --container-max: 1200px;");
+  add("  --container-narrow: 720px;");
+  add("}");
+  add();
+  add("/* Dark theme. Set data-theme=\"dark\" on <html>. Brand, ramp and status solid colors stay the same. */");
+  add('[data-theme="dark"] {');
+  add(`  --color-bg: ${ds.dark.bg};`);
+  add(`  --color-surface: ${ds.dark.surface};`);
+  add(`  --color-text: ${ds.dark.ink};`);
+  add(`  --color-text-muted: ${ds.dark.muted};`);
+  add(`  --color-border: ${ds.dark.line};`);
+  add(`  --color-link: ${ds.dark.link};`);
+  ds.dark.status.forEach((s) => {
+    add(`  --color-${s.token}-soft: ${s.soft};`);
+    add(`  --color-on-${s.token}-soft: ${s.onSoft};`);
+  });
+  ds.dark.shadows.forEach((s) => add(`  --shadow-${s.token}: ${s.value};`));
+  add(`  --focus-ring: ${ds.dark.focusRing};`);
   add("}");
   return L.join("\n") + "\n";
 }
@@ -290,6 +415,27 @@ function tokensJson(ds: DesignSystem): string {
         space: Object.fromEntries(SPACING.map(([k, v]) => [k, dim(v)])),
         radius: { sm: dim(ds.corners.sm), md: dim(ds.corners.md), lg: dim(ds.corners.lg), pill: dim(999) },
         shadow: Object.fromEntries(ds.shadows.map((s) => [s.token, { $type: "shadow", $value: s.value }])),
+        state: {
+          "primary-hover": c(ds.states.primaryHover, "Main button fill on hover"),
+          "primary-pressed": c(ds.states.primaryPressed, "Main button fill when pressed"),
+          "focus-ring": { $type: "shadow", $value: ds.states.focusRing, $description: "Keyboard focus ring" },
+          "disabled-opacity": { $type: "number", $value: 0.45 },
+        },
+        motion: Object.fromEntries(MOTION.map(([k, v]) => [k, { $type: k.startsWith("ease") ? "cubicBezier" : "duration", $value: v }])),
+        breakpoint: Object.fromEntries(BREAKPOINTS.map(([k, v]) => [k, dim(v)])),
+        container: { max: dim(1200), narrow: dim(720) },
+        dark: {
+          color: {
+            bg: c(ds.dark.bg),
+            surface: c(ds.dark.surface),
+            text: c(ds.dark.ink),
+            "text-muted": c(ds.dark.muted),
+            border: c(ds.dark.line),
+            link: c(ds.dark.link, `${ds.dark.linkRatio.toFixed(1)}:1 on the dark background`),
+            ...Object.fromEntries(ds.dark.status.flatMap((x) => [[`${x.token}-soft`, c(x.soft)], [`on-${x.token}-soft`, c(x.onSoft)]])),
+          },
+          shadow: Object.fromEntries(ds.dark.shadows.map((x) => [x.token, { $type: "shadow", $value: x.value }])),
+        },
       },
       null,
       2
@@ -301,8 +447,8 @@ function tokensJson(ds: DesignSystem): string {
 
 const grade = (r: number) => (r >= 7 ? "AAA" : r >= 4.5 ? "AA" : "AA large text only");
 
-const card = (group: string, title: string, body: string, extraCss = "") =>
-  `<!-- @dsCard group="${group}" -->\n<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>\n` +
+const card = (group: string, title: string, body: string, extraCss = "", theme: "light" | "dark" = "light") =>
+  `<!-- @dsCard group="${group}" -->\n<!doctype html>\n<html lang="en"${theme === "dark" ? ' data-theme="dark"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>\n` +
   `<link rel="stylesheet" href="../tokens.css">\n<style>` +
   `body{margin:0;padding:var(--space-6);font-family:var(--font-body);font-size:var(--text-body);line-height:var(--leading-body);background:var(--color-bg);color:var(--color-text)}` +
   `h1{font-family:var(--font-heading);font-size:var(--text-h3);line-height:var(--leading-h3);margin:0 0 var(--space-4)}` +
@@ -377,6 +523,64 @@ function previewCards(ds: DesignSystem): BundleFile[] {
       `.boxes{display:flex;gap:var(--space-4);flex-wrap:wrap}.bx{width:92px;height:64px;display:grid;place-items:center;background:var(--color-surface);border:1px solid var(--color-border);font-family:var(--font-mono);font-size:var(--text-caption)}`
   );
 
+  const BTN_CSS =
+    `.r{display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end}` +
+    `.btn{font:inherit;font-weight:600;font-size:var(--text-small);padding:var(--space-3) var(--space-4);border-radius:var(--radius-md);border:var(--border-width) solid transparent;cursor:pointer;transition:background var(--duration-fast) var(--ease-standard),box-shadow var(--duration-fast) var(--ease-standard)}` +
+    `.btn.primary{background:var(--color-primary);color:var(--color-on-primary)}.btn.primary:hover,.btn.primary.is-hover{background:var(--color-primary-hover)}.btn.primary:active,.btn.primary.is-pressed{background:var(--color-primary-pressed)}` +
+    `.btn.secondary{background:var(--color-surface);color:var(--color-text);border-color:var(--color-border)}.btn.secondary:hover,.btn.secondary.is-hover{border-color:var(--color-text-muted)}` +
+    `.btn.ghost{background:transparent;color:var(--color-link)}.btn.ghost:hover,.btn.ghost.is-hover{background:var(--color-surface)}` +
+    `.btn.danger{background:var(--color-danger);color:var(--color-on-danger)}` +
+    `.btn:focus-visible,.btn.is-focus,input:focus-visible,select:focus-visible,.is-focus{outline:none;box-shadow:var(--focus-ring)}` +
+    `.btn:disabled{opacity:var(--opacity-disabled);cursor:not-allowed}`;
+
+  const statesCard = card(
+    "Components",
+    "Interaction states",
+    `<p class="note">Every interactive element has these five states. Hover and pressed darken the fill; focus adds the ring; disabled drops to 45% opacity.</p>\n` +
+      `<table><tr><th></th><th>Default</th><th>Hover</th><th>Pressed</th><th>Focus</th><th>Disabled</th></tr>` +
+      (["primary", "secondary", "ghost"] as const)
+        .map((k) => `<tr><th>${k[0].toUpperCase() + k.slice(1)}</th><td><button class="btn ${k}">Button</button></td><td><button class="btn ${k} is-hover">Button</button></td><td><button class="btn ${k} is-pressed">Button</button></td><td><button class="btn ${k} is-focus">Button</button></td><td><button class="btn ${k}" disabled>Button</button></td></tr>`)
+        .join("") +
+      `<tr><th>Input</th><td><input value="Text"></td><td><input value="Text" class="is-hover"></td><td></td><td><input value="Text" class="is-focus"></td><td><input value="Text" disabled></td></tr></table>`,
+    BTN_CSS +
+      `.note{color:var(--color-text-muted);font-size:var(--text-small);max-width:60ch}table{border-collapse:separate;border-spacing:var(--space-3)}th{font-size:var(--text-caption);font-weight:600;color:var(--color-text-muted);text-align:left}` +
+      `input{font:inherit;width:96px;padding:var(--space-2) var(--space-3);border-radius:var(--radius-md);border:var(--border-width) solid var(--color-border);background:var(--color-bg);color:var(--color-text)}input.is-hover{border-color:var(--color-text-muted)}input:disabled{opacity:var(--opacity-disabled)}`
+  );
+
+  const moreCard = card(
+    "Components",
+    "Selection, navigation and feedback",
+    `<h2>Navigation</h2>\n<nav class="nav"><b>${ds.name}</b><a class="on" href="#">Overview</a><a href="#">Projects</a><a href="#">Team</a><span></span><button class="btn primary">New project</button></nav>\n` +
+      `<h2>Tabs</h2>\n<div class="tabs"><a class="on" href="#">Details</a><a href="#">Activity</a><a href="#">Settings</a></div>\n` +
+      `<h2>Checkbox, radio and switch</h2>\n<div class="r"><label class="ck"><input type="checkbox" checked> Checked</label><label class="ck"><input type="checkbox"> Unchecked</label><label class="ck"><input type="radio" name="r" checked> Selected</label><label class="ck"><input type="radio" name="r"> Option</label><span class="sw on"></span><span class="sw"></span></div>\n` +
+      `<h2>Tooltip and toast</h2>\n<div class="r" style="align-items:center"><span class="tip">Copied to clipboard</span><div class="toast"><b>Saved.</b> Your changes are live. <a href="#">Undo</a></div></div>\n` +
+      `<h2>Dialog</h2>\n<div class="scrim"><div class="dialog"><h3>Delete this project?</h3><p>This removes the project and its files for everyone. It can't be undone.</p><div class="r" style="justify-content:flex-end"><button class="btn ghost">Cancel</button><button class="btn danger">Delete project</button></div></div></div>`,
+    BTN_CSS +
+      `.nav{display:flex;align-items:center;gap:var(--space-6);padding:var(--space-3) var(--space-4);background:var(--color-surface);border:var(--border-width) solid var(--color-border);border-radius:var(--radius-lg)}.nav b{font-family:var(--font-heading)}.nav a{color:var(--color-text-muted);text-decoration:none;font-size:var(--text-small);font-weight:600}.nav a.on{color:var(--color-text)}.nav span{flex:1}` +
+      `.tabs{display:flex;gap:var(--space-6);border-bottom:var(--border-width) solid var(--color-border)}.tabs a{padding:var(--space-3) 0;color:var(--color-text-muted);text-decoration:none;font-size:var(--text-small);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px}.tabs a.on{color:var(--color-text);border-color:var(--color-primary)}` +
+      `.ck{display:flex;align-items:center;gap:var(--space-2);font-size:var(--text-small)}.ck input{width:18px;height:18px;accent-color:var(--color-link)}` +
+      `.sw{width:40px;height:24px;border-radius:var(--radius-pill);background:var(--color-border);position:relative;display:inline-block}.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--color-bg);box-shadow:var(--shadow-sm);transition:left var(--duration-fast) var(--ease-standard)}.sw.on{background:var(--color-link)}.sw.on::after{left:19px}` +
+      `.tip{background:var(--color-text);color:var(--color-bg);font-size:var(--text-caption);padding:var(--space-1) var(--space-2);border-radius:var(--radius-sm)}` +
+      `.toast{background:var(--color-surface);border:var(--border-width) solid var(--color-border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:var(--space-3) var(--space-4);font-size:var(--text-small)}.toast a{color:var(--color-link);font-weight:600;margin-left:var(--space-2)}` +
+      `.scrim{background:rgba(0,0,0,.35);border-radius:var(--radius-lg);padding:var(--space-8);display:grid;place-items:center}.dialog{background:var(--color-bg);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:var(--space-6);max-width:420px}.dialog h3{font-family:var(--font-heading);font-size:var(--text-h3);margin:0 0 var(--space-2)}.dialog p{color:var(--color-text-muted);margin:0 0 var(--space-6);font-size:var(--text-small)}`
+  );
+
+  const darkBody =
+    `<p class="note">The same tokens with <code>data-theme="dark"</code> on the page. Brand and status colors do not change; surfaces, text, borders, the link color, soft status backgrounds and shadows do.</p>\n` +
+    `<div class="r"><button class="btn primary">Primary action</button><button class="btn secondary">Secondary</button><button class="btn ghost">Ghost</button></div>\n` +
+    `<div class="card"><h3>Card title</h3><p>Body text on the dark surface. <a href="#">Links use the dark link color.</a></p></div>\n` +
+    ds.status.map((s) => `<div class="alert" style="background:var(--color-${s.token}-soft);color:var(--color-on-${s.token}-soft);border-color:var(--color-${s.token})"><b>${s.label}.</b> A short message.</div>`).join("\n");
+  const darkCard = card(
+    "Colors",
+    "Dark theme",
+    darkBody,
+    BTN_CSS +
+      `.note{color:var(--color-text-muted);font-size:var(--text-small);max-width:60ch}.r{margin:var(--space-4) 0}` +
+      `.card{background:var(--color-surface);border:var(--border-width) solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-6);box-shadow:var(--shadow-md);max-width:440px;margin-bottom:var(--space-4)}.card h3{font-family:var(--font-heading);font-size:var(--text-h3);margin:0 0 var(--space-2)}.card p{margin:0;color:var(--color-text-muted)}.card a{color:var(--color-link)}` +
+      `.alert{border-left:4px solid;border-radius:var(--radius-sm);padding:var(--space-3) var(--space-4);margin-bottom:var(--space-2);font-size:var(--text-small)}`,
+    "dark"
+  );
+
   const componentsCard = card(
     "Components",
     "Core components",
@@ -401,6 +605,9 @@ function previewCards(ds: DesignSystem): BundleFile[] {
     { path: "preview/type.html", content: typeCard },
     { path: "preview/spacing.html", content: shapeCard },
     { path: "preview/components.html", content: componentsCard },
+    { path: "preview/states.html", content: statesCard },
+    { path: "preview/components-more.html", content: moreCard },
+    { path: "preview/dark.html", content: darkCard },
   ];
 }
 
@@ -412,7 +619,7 @@ function readme(ds: DesignSystem): string {
   const pairs = readablePairs(ds.named, 10);
   const rules = [
     "Use the palette colors and the ramps, grays and status colors defined here. Do not introduce other hues.",
-    has("neutral-light") && has("neutral-dark") ? "Background is the default page color and Text is the default text color. For a dark theme, swap them." : null,
+    "Background is the default page color and Text is the default text color. The dark theme has its own values, listed below; do not simply swap the two.",
     has("primary") ? "Primary carries the brand: the logo, main buttons and key fills. One primary action per view." : null,
     `Links use \`${ds.link.hex}\` (${ds.link.from}), which is ${ds.link.ratio.toFixed(1)}:1 on the page background.${
       ds.link.hex !== ds.named.find((n) => n.role === "primary")?.hex ? " Primary is not readable enough as text on the background, so do not use it for links or body text." : ""
@@ -428,9 +635,13 @@ function readme(ds: DesignSystem): string {
     `# ${ds.name}: starter design system\n\n` +
     `Built around a ${ds.named.length}-color ${ds.mode} palette. Use it as the foundation for everything you design or build for this brand.\n\n` +
     `## What is a brand decision and what is a default\n\n` +
-    `- **Chosen by the owner:** the palette colors, the type pairing (${ds.type.heading}${ds.type.body !== ds.type.heading ? ` + ${ds.type.body}` : ""}) and the corner style (${ds.corners.label.toLowerCase()}).\n` +
-    `- **Derived from the palette:** tint and shade ramps, the gray ramp (tinted with the brand hue), status colors (strength matched to the brand color), the link color, borders and shadows.\n` +
-    `- **Standard starter values:** the type scale and the 4px spacing scale. Sensible, but not specific to this brand. Adjust if the owner gives other guidance.\n\n` +
+    `- **Brand name:** ${ds.name}.\n` +
+    `- **Palette:** chosen by the owner.\n` +
+    `- **Type pairing:** ${ds.type.heading}${ds.type.body !== ds.type.heading ? ` + ${ds.type.body}` : ""}. ${ds.options.chosen.type ? "Selected by the owner; treat it as a brand decision." : "Left on the export default. Confirm it with the owner before treating it as the brand typeface."}\n` +
+    `- **Corner style:** ${ds.corners.label.toLowerCase()}. ${ds.options.chosen.corners ? "Selected by the owner." : "Left on the export default; confirm with the owner."}\n` +
+    `- **Icon set:** ${ds.icons.label}. ${ds.options.chosen.icons ? "Selected by the owner." : "Left on the export default; confirm with the owner."}\n` +
+    `- **Derived from the palette:** tint and shade ramps, the gray ramp (tinted with the brand hue), status colors (strength matched to the brand color), the link color, hover and pressed states, the dark theme, borders and shadows.\n` +
+    `- **Standard starter values:** the type scale, the 4px spacing scale, motion timings, breakpoints and container widths. Sensible, but not specific to this brand. Adjust if the owner gives other guidance.\n\n` +
     `## Palette\n\n| Role | Hex | Use for | Text on it |\n|---|---|---|---|\n${rows}\n\n` +
     `## Surfaces and text\n\n` +
     `| Token | Hex | Use for |\n|---|---|---|\n| Background | \`${ds.bg}\` | Page |\n| Surface | \`${ds.surface}\` | Cards and panels |\n| Text | \`${ds.ink}\` | Body text |\n| Muted text | \`${ds.muted}\` | Secondary text |\n| Border | \`${ds.line}\` | Hairlines, input borders |\n| Link | \`${ds.link.hex}\` | Link text |\n\n` +
@@ -443,16 +654,25 @@ function readme(ds: DesignSystem): string {
     `| Style | Size | Line height | Weight |\n|---|---|---|---|\n${TYPE_SCALE.map((t) => `| ${t.label} | ${t.size}px | ${t.line} | ${t.weight} |`).join("\n")}\n\n` +
     `## Shape and spacing\n\n- Corners: small ${ds.corners.sm}px, medium ${ds.corners.md}px (buttons, inputs), large ${ds.corners.lg}px (cards), plus a full pill for badges.\n` +
     `- Spacing: a 4px base: ${SPACING.map(([, v]) => `${v}`).join(", ")}px.\n- Borders: 1px in the Border color.\n- Shadows: three levels (sm, md, lg), tinted with the Text color.\n\n` +
-    `## Components\n\n\`preview/components.html\` shows the starting set, built only from these tokens: primary, secondary, ghost and danger buttons, a disabled state, text input, select, a card with a badge, and the four alerts. Author further components in the same style.\n\n` +
+    `## Interaction states\n\n- **Hover:** the main button fill becomes \`${ds.states.primaryHover}\`; secondary buttons and inputs darken their border; ghost buttons gain the Surface color.\n- **Pressed:** the main button fill becomes \`${ds.states.primaryPressed}\`.\n- **Focus:** a 2px ring in the Link color, offset by 2px of the background (\`--focus-ring\`). Show it for keyboard focus on every interactive element.\n- **Disabled:** 45% opacity, no hover change, \`not-allowed\` cursor.\n\n` +
+    `## Dark theme\n\nSet \`data-theme="dark"\` on the page. Brand, ramp and solid status colors are unchanged.\n\n| Token | Dark value |\n|---|---|\n| Background | \`${ds.dark.bg}\` |\n| Surface | \`${ds.dark.surface}\` |\n| Text | \`${ds.dark.ink}\` |\n| Muted text | \`${ds.dark.muted}\` |\n| Border | \`${ds.dark.line}\` |\n| Link | \`${ds.dark.link}\` (${ds.dark.linkRatio.toFixed(1)}:1 on the dark background) |\n\nSoft status backgrounds switch to deep tints with light text, and shadows become stronger and pure black. All values are in \`tokens.css\` under \`[data-theme="dark"]\`.\n\n` +
+    `## Icons\n\nUse **${ds.icons.label}** (${ds.icons.url}). ${ds.icons.note} Icons take the color of the text beside them; do not color them with status colors unless they signal that state.\n\n` +
+    `## Motion and layout\n\n- Durations: fast 120ms (hover, focus), base 200ms (menus, toggles), slow 320ms (dialogs, page-level changes).\n- Easing: \`cubic-bezier(0.2, 0, 0, 1)\` as the standard curve. Respect reduced-motion preferences.\n- Breakpoints: ${BREAKPOINTS.map(([k, v]) => `${k} ${v}px`).join(", ")}.\n- Content width: 1200px maximum, 720px for long-form reading.\n\n` +
+    `## Components\n\nThe preview cards show the starting set, built only from these tokens:\n\n- \`preview/components.html\`: primary, secondary, ghost and danger buttons, text input, select, a card with a badge, and the four alerts\n- \`preview/states.html\`: default, hover, pressed, focus and disabled for buttons and inputs\n- \`preview/components-more.html\`: navigation bar, tabs, checkbox, radio, switch, tooltip, toast and dialog\n- \`preview/dark.html\`: the dark theme applied\n\nAuthor any further components in the same style.\n\n` +
+    (ds.options.url ? `## Product reference\n\nThe owner's live site or product: ${ds.options.url}\n\nUse it as the reference for real screens, layout and density. Where it disagrees with a starter value in this file, the product wins.\n\n` : "") +
+    (ds.options.voice ? `## Voice and tone\n\nIn the owner's words:\n\n> ${ds.options.voice.replace(/\s+/g, " ").trim()}\n\nWrite interface copy and sample content to match.\n\n` : "") +
     `## Not included: ask, do not invent\n\nThis export comes from a color tool, so it cannot supply the following. Ask the owner for them before relying on a guess:\n\n` +
-    `- **Logo** files and the rules for using them\n- **Icons:** which set, or the brand's own\n- **Imagery:** photo or illustration style, with examples\n- **Voice and tone:** sample copy and casing rules\n- **Product references:** screenshots, a live URL or a repository of anything already built\n\n` +
-    `## Files\n\n- \`tokens.css\`: every token as a CSS custom property, and the font import\n- \`tokens.json\`: the same values in design-token JSON\n- \`preview/*.html\`: preview cards for colors, ramps, status, type, spacing and components\n\n` +
+    `- **Logo** files and the rules for using them\n- **Imagery:** photo or illustration style, with examples\n` +
+    (ds.options.voice ? "" : `- **Voice and tone:** sample copy and casing rules\n`) +
+    (ds.options.url ? "" : `- **Product references:** screenshots, a live URL or a repository of anything already built\n`) +
+    `\n` +
+    `## Files\n\n- \`tokens.css\`: every token as a CSS custom property, and the font import\n- \`tokens.json\`: the same values in design-token JSON\n- \`preview/*.html\`: preview cards for colors, ramps, status, the dark theme, type, spacing, components and interaction states\n\n` +
     `Exported from palette by vixxiv (https://palette.vixxiv.com).\n`
   );
 }
 
 /** The full Claude Design bundle: tokens, a README of rules, and preview cards. */
-export function buildDesignSystemBundle(colors: ColorItem[], mode: HarmonyMode, name: string, typeStyle: TypeStyle, cornerStyle: CornerStyle): BundleFile[] {
-  const ds = buildDesignSystem(colors, mode, name, typeStyle, cornerStyle);
+export function buildDesignSystemBundle(colors: ColorItem[], mode: HarmonyMode, options: DesignSystemOptions): BundleFile[] {
+  const ds = buildDesignSystem(colors, mode, options);
   return [{ path: "README.md", content: readme(ds) }, { path: "tokens.css", content: tokensCss(ds) }, { path: "tokens.json", content: tokensJson(ds) }, ...previewCards(ds)];
 }

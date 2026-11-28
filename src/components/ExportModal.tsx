@@ -11,7 +11,7 @@ import {
   downloadBlob,
   downloadText,
 } from "../utils/exportFormats";
-import { buildDesignSystemBundle, TYPE_STYLES, CORNER_STYLES, TypeStyle, CornerStyle } from "../utils/designSystem";
+import { buildDesignSystemBundle, TYPE_STYLES, CORNER_STYLES, ICON_SETS, TypeStyle, CornerStyle, IconSet } from "../utils/designSystem";
 
 type FormatId = "css" | "tailwind" | "json" | "claude";
 
@@ -34,6 +34,13 @@ export const ExportModal: React.FC<Props> = ({ open, onClose }) => {
   const [copied, setCopied] = useState(false);
   const [typeStyle, setTypeStyle] = useState<TypeStyle>("modern");
   const [corners, setCorners] = useState<CornerStyle>("soft");
+  const [iconSet, setIconSet] = useState<IconSet>("lucide");
+  const [siteUrl, setSiteUrl] = useState("");
+  const [voice, setVoice] = useState("");
+  // Which choices were actually made. The bundle tells Claude Design to treat
+  // an untouched default as something to confirm, not as a brand decision.
+  const [chosen, setChosen] = useState({ type: false, corners: false, icons: false });
+  const [nameMissing, setNameMissing] = useState(false);
 
   const isPro = userSubscription.tier !== "free";
   const active = FORMATS.find((f) => f.id === format)!;
@@ -69,7 +76,23 @@ export const ExportModal: React.FC<Props> = ({ open, onClose }) => {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "palette";
 
   const downloadBundle = () => {
-    const files = buildDesignSystemBundle(currentColors, harmonyMode, title, typeStyle, corners);
+    // A design system needs a name; "Untitled palette" is the first thing
+    // Claude Design asks to have fixed.
+    if (!name.trim()) {
+      setNameMissing(true);
+      showToast("Give the design system a brand name first.", "error");
+      return;
+    }
+    const url = siteUrl.trim();
+    const files = buildDesignSystemBundle(currentColors, harmonyMode, {
+      name: name.trim(),
+      typeStyle,
+      cornerStyle: corners,
+      iconSet,
+      url: url ? (/^https?:\/\//i.test(url) ? url : `https://${url}`) : undefined,
+      voice: voice.trim() || undefined,
+      chosen,
+    });
     downloadBlob(zipFiles(files, `${slug}-design-system`), `${slug}-design-system.zip`);
     showToast("Design-system bundle downloaded", "success");
   };
@@ -128,34 +151,66 @@ export const ExportModal: React.FC<Props> = ({ open, onClose }) => {
           <p className="text-xs text-slate-500 font-sans">{active.blurb}</p>
 
           {format === "claude" && !locked && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Brand name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    maxLength={64}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      setNameMissing(false);
+                    }}
+                    placeholder="e.g. vixxivapps"
+                    className={`w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 focus:border-slate-900 focus:outline-hidden ${nameMissing ? "border-rose-400 bg-rose-50" : ""}`}
+                  />
+                  {nameMissing && <p className="text-[11px] text-rose-600 mt-1">Needed for the Claude Design bundle.</p>}
+                </div>
+                <div>
+                  <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Website or product URL (optional)</label>
+                  <input type="text" value={siteUrl} maxLength={200} onChange={(e) => setSiteUrl(e.target.value)} placeholder="e.g. vixxiv.com" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 focus:border-slate-900 focus:outline-hidden" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Type style</label>
+                  <select value={typeStyle} onChange={(e) => { setTypeStyle(e.target.value as TypeStyle); setChosen((c) => ({ ...c, type: true })); }} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 cursor-pointer">
+                    {(Object.keys(TYPE_STYLES) as TypeStyle[]).map((k) => (
+                      <option key={k} value={k}>{TYPE_STYLES[k].label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Corners</label>
+                  <select value={corners} onChange={(e) => { setCorners(e.target.value as CornerStyle); setChosen((c) => ({ ...c, corners: true })); }} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 cursor-pointer">
+                    {(Object.keys(CORNER_STYLES) as CornerStyle[]).map((k) => (
+                      <option key={k} value={k}>{CORNER_STYLES[k].label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Icon set</label>
+                  <select value={iconSet} onChange={(e) => { setIconSet(e.target.value as IconSet); setChosen((c) => ({ ...c, icons: true })); }} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 cursor-pointer">
+                    {(Object.keys(ICON_SETS) as IconSet[]).map((k) => (
+                      <option key={k} value={k}>{ICON_SETS[k].label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div>
-                <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Brand or palette name</label>
-                <input
-                  type="text"
-                  value={name}
-                  maxLength={64}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. vixxivapps"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 focus:border-slate-900 focus:outline-hidden"
+                <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Tone of voice (optional)</label>
+                <textarea
+                  value={voice}
+                  maxLength={400}
+                  rows={2}
+                  onChange={(e) => setVoice(e.target.value)}
+                  placeholder="How the brand sounds, in your own words. e.g. Plain-spoken and confident, a little dry, never salesy."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 focus:border-slate-900 focus:outline-hidden resize-y"
                 />
               </div>
-              <div>
-                <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Type style (bundle)</label>
-                <select value={typeStyle} onChange={(e) => setTypeStyle(e.target.value as TypeStyle)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 cursor-pointer">
-                  {(Object.keys(TYPE_STYLES) as TypeStyle[]).map((k) => (
-                    <option key={k} value={k}>{TYPE_STYLES[k].label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase tracking-widest mb-1">Corners (bundle)</label>
-                <select value={corners} onChange={(e) => setCorners(e.target.value as CornerStyle)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm font-sans text-slate-800 cursor-pointer">
-                  {(Object.keys(CORNER_STYLES) as CornerStyle[]).map((k) => (
-                    <option key={k} value={k}>{CORNER_STYLES[k].label}</option>
-                  ))}
-                </select>
-              </div>
+              <p className="text-[11px] text-slate-500 font-sans">These details go into the Claude Design bundle. The brief below uses the name only.</p>
             </div>
           )}
 
@@ -193,8 +248,8 @@ export const ExportModal: React.FC<Props> = ({ open, onClose }) => {
               {format === "claude" && (
                 <div className="text-xs text-slate-600 font-sans bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
                   <p><b>Copy brief:</b> paste it into any Claude chat or project and Claude will design and build with these colors and rules.</p>
-                  <p><b>Claude Design bundle:</b> a starter design system built around your palette: tints and shades, grays, status colors, a readable link color, your chosen type pairing and corner style, spacing, shadows, and preview cards including buttons, forms, cards and alerts. Unzip it and add the files to a design system in Claude Design.</p>
-                  <p>Give it your brand name above. It can't include your logo, icons, imagery or tone of voice, so add those in Claude Design yourself; the bundle tells Claude to ask for them and not guess.</p>
+                  <p><b>Claude Design bundle:</b> a starter design system built around your palette. It includes tints and shades, grays, status colors, a readable link color, a full dark theme, hover, focus and pressed states, your type pairing, corners and icon set, spacing, shadows and motion, and preview cards for buttons, forms, cards, alerts, navigation, tabs, checkboxes, switches, tooltips, toasts and dialogs. Unzip it and add the files to a design system in Claude Design.</p>
+                  <p>It can't include your logo or imagery, so add those in Claude Design yourself. The bundle tells Claude to ask for them and not guess.</p>
                 </div>
               )}
             </>
