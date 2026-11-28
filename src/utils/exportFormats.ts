@@ -115,10 +115,21 @@ export function buildClaudeBrief(colors: ColorItem[], mode: HarmonyMode, name = 
     ? pairs.map((p) => `- ${p.text.label} \`${p.text.hex}\` on ${p.bg.label} \`${p.bg.hex}\`: ${p.ratio.toFixed(1)}:1 (${grade(p.ratio)})`).join("\n")
     : "- No pair in this palette reaches 4.5:1. Use near-black or near-white text and say so.";
   const has = (r: ColorRole) => named.some((c) => c.role === r);
+  // Link text has to be readable on the page background; the brand color often is not.
+  const pageBg = buildPreviewTheme(colors, false).bg;
+  const asText = named
+    .filter((c) => c.role !== "neutral-light" && c.role !== "neutral-dark")
+    .map((c) => ({ c, ratio: getContrastRatio(c.hex, pageBg) }))
+    .sort((a, b) => (a.c.role === "primary" && a.ratio >= 4.5 ? -1 : b.c.role === "primary" && b.ratio >= 4.5 ? 1 : b.ratio - a.ratio));
+  const linkRule =
+    asText[0] && asText[0].ratio >= 4.5
+      ? `Links use ${asText[0].c.label} \`${asText[0].c.hex}\` (${asText[0].ratio.toFixed(1)}:1 on the page background).${asText[0].c.role !== "primary" && has("primary") ? " Primary is not readable enough as text on the background, so keep it for fills." : ""}`
+      : "None of the brand colors is readable as text on the page background. Use the Dark color for links, underlined, or a darker shade of Primary that reaches 4.5:1.";
   const rules = [
     "Use only these colors. Tints and shades of them are fine; do not introduce new hues.",
     has("neutral-light") && has("neutral-dark") ? "Light is the default page background and Dark is the default text color. For a dark theme, swap them." : null,
-    has("primary") ? "Primary carries the brand: logo, main buttons, key links. One primary action per view." : null,
+    has("primary") ? "Primary carries the brand: logo, main buttons and key fills. One primary action per view." : null,
+    linkRule,
     has("secondary") ? "Secondary supports Primary: secondary buttons, tags, panels, chart series." : null,
     has("accent") ? "Accent is for emphasis only: a highlight, a badge, one call to action. Keep it to small areas." : null,
     "For text on a colored fill, use the \"Text on it\" color listed for that fill.",
@@ -144,51 +155,7 @@ export interface BundleFile {
   content: string;
 }
 
-const cardShell = (title: string, body: string, bg: string, ink: string) =>
-  `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>\n` +
-  `<link rel="stylesheet" href="../colors.css">\n` +
-  `<style>body{margin:0;padding:24px;font-family:ui-sans-serif,system-ui,sans-serif;background:${bg};color:${ink}}h1{font-size:16px;margin:0 0 16px}` +
-  `.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}.sw{border-radius:10px;padding:14px;min-height:92px;display:flex;flex-direction:column;justify-content:space-between;border:1px solid rgba(0,0,0,.08)}` +
-  `.sw b{font-size:13px}.sw code{font-size:12px}.sw small{font-size:11px;opacity:.85}.row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;margin-bottom:8px;font-size:14px}.row span{margin-left:auto;font-size:12px;opacity:.85}</style></head>\n<body>\n${body}\n</body></html>\n`;
-
-/**
- * A minimal design-system folder: tokens, a README of usage rules, and two
- * preview cards. The first line of each preview is the marker Claude Design's
- * design-system panel reads to list a card.
- */
-export function buildClaudeDesignBundle(colors: ColorItem[], mode: HarmonyMode, name = "Untitled palette"): BundleFile[] {
-  const named = nameColors(colors);
-  const theme = buildPreviewTheme(colors, false);
-  const pairs = readablePairs(named, 10);
-
-  const swatches = named
-    .map((c) => `  <div class="sw" style="background:${c.hex};color:${c.on}"><b>${c.label}</b><div><code>${c.hex}</code><br><small>${c.job}</small></div></div>`)
-    .join("\n");
-  const colorsCard =
-    `<!-- @dsCard group="Colors" -->\n` + cardShell("Palette", `<h1>${name}: ${named.length}-color ${mode} palette</h1>\n<div class="grid">\n${swatches}\n</div>`, theme.bg, theme.ink);
-
-  const pairRows = pairs
-    .map((p) => `  <div class="row" style="background:${p.bg.hex};color:${p.text.hex}">${p.text.label} on ${p.bg.label}<span>${p.ratio.toFixed(1)}:1 ${grade(p.ratio)}</span></div>`)
-    .join("\n");
-  const pairsCard =
-    `<!-- @dsCard group="Colors" -->\n` + cardShell("Readable pairs", `<h1>Readable text pairs (WCAG)</h1>\n${pairRows || "<p>No pair in this palette reaches 4.5:1.</p>"}`, theme.bg, theme.ink);
-
-  const readme =
-    buildClaudeBrief(colors, mode, name) +
-    `\n## Files in this bundle\n\n` +
-    `- \`colors.css\`: the palette as CSS custom properties\n` +
-    `- \`tokens.json\`: the same values in design-token JSON\n` +
-    `- \`preview/colors.html\`, \`preview/pairs.html\`: preview cards\n\n` +
-    `Exported from palette by vixxiv (https://palette.vixxiv.com).\n`;
-
-  return [
-    { path: "README.md", content: readme },
-    { path: "colors.css", content: buildCssVariables(colors, mode) },
-    { path: "tokens.json", content: buildJsonTokens(colors, mode) },
-    { path: "preview/colors.html", content: colorsCard },
-    { path: "preview/pairs.html", content: pairsCard },
-  ];
-}
+// The bundle itself (tokens, README, preview cards) is built in designSystem.ts.
 
 /* ------------------------------------------------------------------ *
  * Minimal ZIP writer (stored, no compression) so no dependency is needed
