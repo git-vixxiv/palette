@@ -139,6 +139,26 @@ const UsersTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload })
       setBusy(false);
     }
   };
+  // The account whose "Manage" panel is open, and the date typed into it.
+  const [openUid, setOpenUid] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState("");
+  const act = async (u: any, op: string, confirmText: string, extra: Record<string, unknown> = {}) => {
+    if (confirmText && !window.confirm(confirmText)) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api("userAction", { uid: u.uid, op, ...extra });
+      setMsg({ kind: "ok", text: `Done: ${u.email}.` });
+      setOpenUid(null);
+      reload();
+    } catch (err) {
+      setMsg({ kind: "error", text: errText(err) });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const revoke = async (u: any) => {
     if (!window.confirm(`Remove the comp from ${u.email}? Their account goes back to the free plan now.`)) return;
     try {
@@ -200,10 +220,12 @@ const UsersTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload })
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((u: any) => (
-              <tr key={u.uid}>
+              <React.Fragment key={u.uid}>
+              <tr className={u.disabled ? "opacity-60" : ""}>
                 <td className={td}>
                   <span className="font-semibold text-slate-900">{u.email || "(no email)"}</span>
                   {u.name && <span className="text-slate-500"> · {u.name}</span>}
+                  {u.disabled && <span className="ml-2 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">Deactivated</span>}
                   {u.promoRevertFailed && (
                     <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-rose-700" title="A first-payment promo could not be set back to the normal price in Square. Check this subscription's price in Square.">
                       <AlertTriangle className="w-3 h-3" /> promo price not reverted
@@ -224,13 +246,75 @@ const UsersTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload })
                 <td className={td}>{day(u.created)}</td>
                 <td className={td}>{day(u.lastSignIn)}</td>
                 <td className={`${td} text-right`}>
-                  {u.comp && u.tier !== "free" ? (
-                    <button onClick={() => revoke(u)} className="text-xs font-bold text-rose-600 hover:underline cursor-pointer">Remove comp</button>
-                  ) : u.tier === "free" ? (
-                    <button onClick={() => { setEmail(u.email); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-xs font-bold text-[#2589BD] hover:underline cursor-pointer">Comp…</button>
-                  ) : null}
+                  <button onClick={() => { setOpenUid(openUid === u.uid ? null : u.uid); setEndDate(""); }} className="text-xs font-bold text-[#2589BD] hover:underline cursor-pointer">
+                    {openUid === u.uid ? "Close" : "Manage"}
+                  </button>
                 </td>
               </tr>
+              {openUid === u.uid && (
+                <tr className="bg-slate-50">
+                  <td colSpan={6} className="px-3 py-4 whitespace-normal">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-slate-700">
+                      {/* Plan */}
+                      <div className="space-y-2">
+                        <p className={label}>Plan</p>
+                        {u.tier === "free" && <p>On the free plan. Use "Issue a comp" above to give Pro.</p>}
+                        {u.tier === "free" && (
+                          <button onClick={() => { setEmail(u.email); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-xs font-bold text-[#2589BD] hover:underline cursor-pointer">Fill in their email above</button>
+                        )}
+                        {u.renewing && (
+                          <>
+                            <p>Paid plan, renews {day(u.expires)} through Square.</p>
+                            <button disabled={busy} onClick={() => act(u, "cancelRenewal", `Stop ${u.email}'s plan from renewing? They keep Pro until ${day(u.expires)} and are not charged again.`)} className="block text-xs font-bold text-rose-600 hover:underline cursor-pointer">Cancel renewal</button>
+                          </>
+                        )}
+                        {u.comp && u.tier !== "free" && (
+                          <button disabled={busy} onClick={() => revoke(u)} className="block text-xs font-bold text-rose-600 hover:underline cursor-pointer">Remove comp (back to free now)</button>
+                        )}
+                        {u.tier !== "free" && !u.comp && (
+                          <button disabled={busy} onClick={() => act(u, "endNow", `End Pro for ${u.email} right now? Any subscription is stopped and the account goes to the free plan immediately. Nothing is refunded.`)} className="block text-xs font-bold text-rose-600 hover:underline cursor-pointer">End Pro now</button>
+                        )}
+                      </div>
+
+                      {/* Dates */}
+                      <div className="space-y-2">
+                        <p className={label}>Date Pro ends</p>
+                        {u.tier === "pro-lifetime" && !u.comp ? (
+                          <p>Bought lifetime, so there is no end date.</p>
+                        ) : u.renewing ? (
+                          <p>The renewal date is set by Square's billing cycle. To choose your own end date, cancel the renewal first; the date can then be set here. To move the billing date while still charging, change it in the Square Dashboard.</p>
+                        ) : (
+                          <>
+                            <p>{u.tier === "free" ? "Give Pro until a date you choose." : `Currently ${u.tier === "pro-lifetime" ? "never ends" : `ends ${day(u.expires)}`}. Set a new end date:`}</p>
+                            <div className="flex gap-2">
+                              <input type="date" className={input} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                              <button disabled={busy || !endDate} onClick={() => act(u, "setEndDate", "", { date: endDate })} className={btn}>Save</button>
+                            </div>
+                            <p className="text-xs text-slate-500">No charge is made. The account is held as complimentary until that date.</p>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Sign-in */}
+                      <div className="space-y-2">
+                        <p className={label}>Account access</p>
+                        {u.disabled ? (
+                          <>
+                            <p>Deactivated: this person can't sign in.</p>
+                            <button disabled={busy} onClick={() => act(u, "reactivate", "")} className="text-xs font-bold text-[#2589BD] hover:underline cursor-pointer">Reactivate account</button>
+                          </>
+                        ) : (
+                          <>
+                            <p>Deactivating blocks sign-in and stops any subscription from renewing. Their data is kept, and you can reactivate later.</p>
+                            <button disabled={busy} onClick={() => act(u, "deactivate", `Deactivate ${u.email}? They will be signed out and unable to sign in. Any subscription stops renewing.`)} className="text-xs font-bold text-rose-600 hover:underline cursor-pointer">Deactivate account</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
             {data && !rows.length && <tr><td className={td} colSpan={6}>No accounts match.</td></tr>}
           </tbody>

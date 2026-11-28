@@ -757,6 +757,9 @@ async function adminUsers() {
       plan: p.pricingPlan ?? "",
       expires,
       comp: p.comp === true,
+      disabled: u.disabled === true,
+      // A paid monthly/annual plan that Square will bill again.
+      renewing: !p.comp && (tier === "pro-monthly" || tier === "pro-annual") && !!p.subscriptionId && p.subscriptionStatus !== "canceling",
       promoCode: p.promoCode ?? "",
       promoRevertFailed: p.promoRevertFailed === true,
       squareCustomerId: p.squareCustomerId ?? "",
@@ -791,10 +794,22 @@ async function adminRevenue(days: number) {
   let cursor: string | undefined;
   let pages = 0;
   let truncated = false;
+  const base = SQUARE_ENVIRONMENT.value() === "production" ? "https://connect.squareup.com" : "https://connect.squareupsandbox.com";
+  void client;
   do {
-    const res = await client.paymentsApi.listPayments(begin, undefined, "DESC", cursor, SQUARE_LOCATION_ID.value(), undefined, undefined, undefined, 100);
-    payments.push(...(res.result.payments ?? []));
-    cursor = res.result.cursor;
+    const qs = new URLSearchParams({ begin_time: begin, sort_order: "DESC", location_id: SQUARE_LOCATION_ID.value(), limit: "100" });
+    if (cursor) qs.set("cursor", cursor);
+    const r = await fetch(`${base}/v2/payments?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${SQUARE_ACCESS_TOKEN.value()}`, "Square-Version": "2024-10-17", Accept: "application/json" },
+    });
+    const j: any = await r.json();
+    if (!r.ok) {
+      const e = j?.errors?.[0];
+      logger.error("Square payments list failed", { status: r.status, code: e?.code, detail: e?.detail });
+      throw new HttpsError("internal", `Square could not list payments: ${e?.detail || r.status}`);
+    }
+    payments.push(...(j.payments ?? []));
+    cursor = j.cursor;
     pages++;
     if (cursor && pages >= 30) {
       truncated = true;
@@ -810,12 +825,12 @@ async function adminRevenue(days: number) {
 
   const rows = payments.map((p) => ({
     id: p.id as string,
-    at: Date.parse(p.createdAt),
+    at: Date.parse(p.created_at),
     status: p.status as string,
-    amountCents: Number(p.amountMoney?.amount ?? 0),
-    refundedCents: Number(p.refundedMoney?.amount ?? 0),
-    email: emailByCustomer.get(p.customerId ?? "") ?? "",
-    note: (p.note as string) || (p.orderId ? "Subscription invoice" : ""),
+    amountCents: Number(p.amount_money?.amount ?? 0),
+    refundedCents: Number(p.refunded_money?.amount ?? 0),
+    email: emailByCustomer.get(p.customer_id ?? "") ?? (p.buyer_email_address as string) ?? "",
+    note: (p.note as string) || (p.order_id ? "Subscription invoice" : ""),
   }));
   const done = rows.filter((r) => r.status === "COMPLETED");
   const windowTotals = (ms: number) => {
@@ -1058,6 +1073,76 @@ async function adminRevokeComp(data: any, adminEmail: string) {
   return { ok: true };
 }
 
+/** Admin actions on one account: its plan, its dates, and whether it can sign in. */
+async function adminUserAction(data: any, adminEmail: string, adminUid: string) {
+  const uid = String(data?.uid ?? "");
+  const op = String(data?.op ?? "");
+  if (!uid) throw new HttpsError("invalid-argument", "Missing account.");
+  const auth = getAuth();
+  const target = await auth.getUser(uid).catch(() => null);
+  if (!target) throw new HttpsError("not-found", "That account no longer exists.");
+  const email = (target.email ?? "").toLowerCase();
+  const admins = ADMIN_EMAILS.value().split(",").map((e) => e.trim().toLowerCase());
+  const ref = db.collection("users").doc(uid);
+  const prev = (await ref.get()).data() ?? {};
+  const paidRenewing = !prev.comp && hasLiveRecurring(prev) && !!prev.subscriptionId && prev.subscriptionStatus !== "canceling";
+
+  // Stop Square billing this account again. Square ends the subscription at
+  // the close of the period already paid for; no further charges are made.
+  const stopBilling = async () => {
+    if (!prev.comp && prev.subscriptionId && hasLiveRecurring(prev) && prev.subscriptionStatus !== "canceling") {
+      const res = await squareClient().subscriptionsApi.cancelSubscription(prev.subscriptionId);
+      return dateFromSquareDay(res.result.subscription?.canceledDate);
+    }
+    return null;
+  };
+
+  switch (op) {
+    case "cancelRenewal": {
+      if (!paidRenewing) throw new HttpsError("failed-precondition", "That account has no renewing subscription.");
+      const endsOn = await stopBilling();
+      await ref.set({ subscriptionStatus: "canceling", ...(endsOn ? expiryFields(endsOn) : {}), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      break;
+    }
+    case "setEndDate": {
+      if (prev.tier === "pro-lifetime" && !prev.comp) throw new HttpsError("failed-precondition", "That account bought lifetime Pro, so it has no end date.");
+      if (paidRenewing) throw new HttpsError("failed-precondition", "This plan renews through Square. Cancel the renewal first, then set the date Pro should end.");
+      const until = new Date(`${String(data?.date ?? "").slice(0, 10)}T23:59:59Z`);
+      if (Number.isNaN(until.getTime()) || until.getTime() < Date.now()) throw new HttpsError("invalid-argument", "Pick a date in the future.");
+      // From here the account's access is set by us, not by Square, so it is
+      // held as a complimentary period ending on the chosen date.
+      await ref.set(compFields(uid, email, "until", until, adminEmail), { merge: true });
+      break;
+    }
+    case "endNow": {
+      if (admins.includes(email)) throw new HttpsError("failed-precondition", "Admin accounts keep Pro.");
+      if (prev.tier === "pro-lifetime" && !prev.comp) throw new HttpsError("failed-precondition", "That account bought lifetime Pro. It can be deactivated, but its purchase is not removed here.");
+      await stopBilling();
+      await ref.set(
+        { tier: "free", comp: FieldValue.delete(), subscriptionId: "", subscriptionStatus: "cancelled", pricingPlan: "", promoRevertPending: FieldValue.delete(), ...expiryFields(new Date()), updatedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+      break;
+    }
+    case "deactivate": {
+      if (uid === adminUid || admins.includes(email)) throw new HttpsError("failed-precondition", "Admin accounts can't be deactivated here.");
+      // A deactivated account must not keep being charged.
+      const endsOn = await stopBilling();
+      if (endsOn) await ref.set({ subscriptionStatus: "canceling", ...expiryFields(endsOn), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await auth.updateUser(uid, { disabled: true });
+      await auth.revokeRefreshTokens(uid);
+      break;
+    }
+    case "reactivate":
+      await auth.updateUser(uid, { disabled: false });
+      break;
+    default:
+      throw new HttpsError("invalid-argument", "Unknown action.");
+  }
+  logger.info("Admin user action", { op, uid, by: adminEmail });
+  return { ok: true };
+}
+
 export const adminApi = onCall(
   { region: "us-central1", secrets: [SQUARE_ACCESS_TOKEN], cors: true, timeoutSeconds: 120 },
   async (request) => {
@@ -1098,6 +1183,8 @@ export const adminApi = onCall(
           return await adminGrantComp(data, adminEmail);
         case "revokeComp":
           return await adminRevokeComp(data, adminEmail);
+        case "userAction":
+          return await adminUserAction(data, adminEmail, request.auth!.uid);
         default:
           throw new HttpsError("invalid-argument", "Unknown action.");
       }
