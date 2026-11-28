@@ -6,7 +6,7 @@ export const Footer: React.FC = () => (
   <footer className="w-full border-t border-slate-200 bg-white">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 font-sans">
       <p>
-        © {new Date().getFullYear()} {LEGAL.operator}. All rights reserved.
+        © {new Date().getFullYear()} {LEGAL.operator}. {LEGAL.product} is a {LEGAL.brand} product.
       </p>
       <nav aria-label="Legal" className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
         {(Object.keys(LEGAL_PATHS) as LegalDoc[]).map((doc) => (

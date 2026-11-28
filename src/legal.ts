@@ -1,15 +1,16 @@
 // Facts the legal pages are built from. Change them here and every page follows.
-// The three marked TODO are placeholders until confirmed by the owner.
 export const LEGAL = {
   product: "palette",
-  // TODO: the registered legal name of the business (for example "vixxiv, LLC").
-  operator: "vixxiv",
+  // The legal entity that operates the product, and where it is based.
+  operator: "DOru LLC",
+  operatorLocation: "Austin, Texas",
+  // The brand the product is published under. DOru LLC is its parent company.
+  brand: "vixxiv",
   site: "https://palette.vixxiv.com",
-  // TODO: a monitored contact address. Until one is set, pages point to vixxiv.com.
-  contactEmail: "",
+  contactEmail: "contact@vixxiv.com",
   contactUrl: "https://vixxiv.com",
-  // TODO: the US state whose law governs the terms (for example "Ohio").
-  governingState: "",
+  governingState: "Texas",
+  venue: "Travis County, Texas",
   effective: "November 27, 2026",
 };
 
@@ -35,3 +36,11 @@ export function legalDocFromPath(pathname: string): LegalDoc | null {
   if (p === "/refunds" || p === "/refund" || p === "/cancel") return "refunds";
   return null;
 }
+
+/**
+ * Sign-ins that are shown the Admin link and are comped automatically. This
+ * only controls what the page shows; the server holds the real list
+ * (ADMIN_EMAILS in functions/.env) and checks it on every admin request.
+ */
+export const ADMIN_EMAILS = ["joe@vixxiv.com", "amvp123@gmail.com"];
+export const isAdminEmail = (email?: string | null) => ADMIN_EMAILS.includes((email || "").toLowerCase());

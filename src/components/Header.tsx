@@ -3,6 +3,7 @@ import { useApp } from "../context/AppContext";
 import { LogOut, ChevronDown, CheckCircle, Sparkles, Crown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { AuthModal } from "./AuthModal";
+import { isAdminEmail } from "../legal";
 import logoUrl from "../assets/logo.webp";
 
 export const Header: React.FC = () => {
@@ -169,7 +170,7 @@ export const Header: React.FC = () => {
                         )}
 
                         {/* Shown to the owner only; the server decides who is really an admin. */}
-                        {(user.email || "").toLowerCase() === "joe@vixxiv.com" && (
+                        {isAdminEmail(user.email) && (
                           <a href="/admin" className="block px-3 py-2 rounded text-xs font-sans font-bold text-slate-800 hover:bg-slate-50">
                             Admin
                           </a>

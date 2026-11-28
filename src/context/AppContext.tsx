@@ -24,6 +24,8 @@ import {
   setDoc
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { track } from "@amplitude/unified";
+import { isAdminEmail } from "../legal";
 import {
   auth,
   db,
@@ -288,6 +290,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     else showToast("This account already has Pro. You're all set.", "success");
   }, [user, subLoadedFor, userSubscription.tier]);
 
+  // An admin account without a plan is comped by the server the first time it
+  // is recognised. Ask once per sign-in, then re-read the plan.
+  const adminCompAsked = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || subLoadedFor !== user.uid || userSubscription.tier !== "free") return;
+    if (!isAdminEmail(user.email) || !functions || adminCompAsked.current === user.uid) return;
+    adminCompAsked.current = user.uid;
+    httpsCallable(functions, "adminApi")({ action: "whoami" })
+      .then((res: any) => {
+        if (res?.data?.comped) fetchSubscription(user.uid);
+      })
+      .catch(() => undefined);
+  }, [user, subLoadedFor, userSubscription.tier]);
+
   // Re-read the authoritative subscription tier from the backend/Firestore.
   const refreshSubscription = async () => {
     const uid = user ? user.uid : "local_guest";
@@ -530,6 +546,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     regenerateUnlocked();
+    track("Palette Spun");
     showToast("Colors regenerated!", "info");
   };
 

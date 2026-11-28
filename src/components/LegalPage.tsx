@@ -103,7 +103,7 @@ const ManageSubscription: React.FC = () => {
 const Terms: React.FC = () => (
   <>
     <P>
-      These terms are an agreement between you and {LEGAL.operator} ("we", "us"), which operates {LEGAL.product} at {LEGAL.site.replace("https://", "")}. By creating an account or using {LEGAL.product} you agree to them. If you don't agree, please don't use the service.
+      These terms are an agreement between you and {LEGAL.operator} ("we", "us"), a company based in {LEGAL.operatorLocation} and the parent company of {LEGAL.brand}, which operates {LEGAL.product} at {LEGAL.site.replace("https://", "")}. By creating an account or using {LEGAL.product} you agree to them. If you don't agree, please don't use the service.
     </P>
 
     <H2>1. The service</H2>
@@ -141,7 +141,7 @@ const Terms: React.FC = () => (
 
     <H2>6. Our software and brand</H2>
     <P>
-      The {LEGAL.product} software, design, scoring methods, text and the {LEGAL.operator} and {LEGAL.product} names and logos belong to us and are protected by law. These terms don't give you any right to them beyond using the service as intended.
+      The {LEGAL.product} software, design, scoring methods, text and the {LEGAL.brand} and {LEGAL.product} names and logos belong to us and are protected by law. These terms don't give you any right to them beyond using the service as intended.
     </P>
 
     <H2>7. Acceptable use</H2>
@@ -176,12 +176,12 @@ const Terms: React.FC = () => (
 
     <H2>12. Governing law</H2>
     <P>
-      These terms are governed by the laws of {LEGAL.governingState ? `the State of ${LEGAL.governingState}, United States` : `the United States and the state in which ${LEGAL.operator} is organized`}, without regard to conflict-of-law rules. If you are a consumer, you keep any protections that the law of your home country says cannot be waived.
+      These terms are governed by the laws of the State of {LEGAL.governingState}, United States, without regard to conflict-of-law rules. Any dispute that goes to court will be heard in the state or federal courts located in {LEGAL.venue}, and you and we agree to their jurisdiction. If you are a consumer, you keep any protections that the law of your home country says cannot be waived.
     </P>
 
     <H2>13. Contact</H2>
     <P>
-      Questions about these terms: <Contact />.
+      Questions about these terms: <Contact />. {LEGAL.operator}, {LEGAL.operatorLocation}, United States.
     </P>
   </>
 );
@@ -189,7 +189,7 @@ const Terms: React.FC = () => (
 const Privacy: React.FC = () => (
   <>
     <P>
-      This policy explains what {LEGAL.operator} ("we", "us") collects when you use {LEGAL.product} at {LEGAL.site.replace("https://", "")}, why, and the choices you have. We collect as little as the product needs. We don't sell your personal information and we don't run advertising or third-party analytics trackers on {LEGAL.product}.
+      This policy explains what {LEGAL.operator} ("we", "us"), the {LEGAL.operatorLocation} company behind {LEGAL.brand}, collects when you use {LEGAL.product} at {LEGAL.site.replace("https://", "")}, why, and the choices you have. We collect as little as the product needs. We don't sell your personal information and we don't run advertising on {LEGAL.product}. We do use an analytics service to understand how the product is used, described below.
     </P>
 
     <H2>1. What we collect</H2>
@@ -204,14 +204,17 @@ const Privacy: React.FC = () => (
         <strong>Plan and billing records.</strong> Which plan you have, its status, start, renewal and cancellation dates, and the customer and subscription reference numbers Square gives us. Your card number, expiry date and security code are entered into a form hosted by Square and go straight to Square. They never reach our servers.
       </li>
       <li>
+        <strong>Usage analytics.</strong> We use Amplitude to see how {LEGAL.product} is used: pages viewed, buttons clicked, actions such as spinning or exporting a palette, your approximate location derived from your IP address, and your device and browser type. Amplitude also records session replays, which reconstruct how a visit looked on screen so we can find and fix confusing or broken parts of the product. Text you type into form fields is masked in replays, and card details are entered in a separate form hosted by Square that is never recorded.
+      </li>
+      <li>
         <strong>Technical logs.</strong> Our hosting and server providers record standard request data such as IP address, browser type and time of request, for security and troubleshooting.
       </li>
     </UL>
-    <P>You can use the palette generator without an account. In that case nothing about you is stored on our servers.</P>
+    <P>You can use the palette generator without an account. In that case we hold no account or palette data about you; usage analytics are still collected as described above.</P>
 
-    <H2>2. Storage in your browser</H2>
+    <H2>2. Cookies and storage in your browser</H2>
     <P>
-      We don't use advertising or tracking cookies. {LEGAL.product} keeps a few items in your browser's local storage so it works as you expect: your light or dark backdrop choice and your sign-in session (managed by Firebase Authentication). You can clear these at any time in your browser settings.
+      We don't use advertising cookies. {LEGAL.product} keeps a few items in your browser so it works as you expect: your light or dark backdrop choice and your sign-in session (managed by Firebase Authentication). Amplitude sets cookies and local storage entries that hold a random device identifier and session information, so that visits can be counted and understood. You can clear all of these at any time in your browser settings, and you can block them with your browser's privacy controls.
     </P>
 
     <H2>3. How we use it</H2>
@@ -220,10 +223,11 @@ const Privacy: React.FC = () => (
       <li>to store and show your saved palettes;</li>
       <li>to take payment, apply the right plan, and handle renewals and cancellations;</li>
       <li>to send messages about your account or purchase, such as receipts or a notice of a failed payment;</li>
+      <li>to understand how the product is used and improve it;</li>
       <li>to prevent abuse and fix problems.</li>
     </UL>
     <P>
-      Where the GDPR or UK GDPR applies, we rely on performance of our contract with you for the account, palettes and billing; on our legitimate interests for security and troubleshooting; and on legal obligation for keeping transaction records.
+      Where the GDPR or UK GDPR applies, we rely on performance of our contract with you for the account, palettes and billing; on our legitimate interests for security, troubleshooting and understanding how the product is used; and on legal obligation for keeping transaction records.
     </P>
 
     <H2>4. Who we share it with</H2>
@@ -233,11 +237,14 @@ const Privacy: React.FC = () => (
         <strong>Google (Firebase and Google Cloud)</strong> for sign-in, the database, hosting and server functions. The site also loads its typefaces from Google Fonts, which means your browser requests them from Google.
       </li>
       <li>
+        <strong>Amplitude</strong> for usage analytics and session replay, as described in section 1.
+      </li>
+      <li>
         <strong>Square</strong> for payment processing. Square receives your card details and your email address, and handles them under its own privacy policy.
       </li>
     </UL>
     <P>
-      We may also disclose information if the law requires it, or to protect our rights, our users or the public. If {LEGAL.operator} is involved in a merger or sale, account information may transfer to the new owner under this policy's protections.
+      We may also disclose information if the law requires it, or to protect our rights, our users or the public. If {LEGAL.operator} or {LEGAL.brand} is involved in a merger or sale, account information may transfer to the new owner under this policy's protections.
     </P>
 
     <H2>5. Where it is kept, and for how long</H2>
@@ -335,7 +342,7 @@ export const LegalPage: React.FC<{ doc: LegalDoc }> = ({ doc }) => {
   const Body = DOCS[doc];
   useEffect(() => {
     const before = document.title;
-    document.title = `${LEGAL_TITLES[doc]} · ${LEGAL.product} by ${LEGAL.operator}`;
+    document.title = `${LEGAL_TITLES[doc]} · ${LEGAL.product} by ${LEGAL.brand}`;
     window.scrollTo(0, 0);
     return () => {
       document.title = before;

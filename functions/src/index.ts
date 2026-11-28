@@ -53,7 +53,7 @@ const SQUARE_WEBHOOK_URL = defineString("SQUARE_WEBHOOK_URL", { default: "" });
 const PRICE_MONTHLY_CENTS = defineString("PRICE_MONTHLY_CENTS", { default: "500" });
 const PRICE_ANNUAL_CENTS = defineString("PRICE_ANNUAL_CENTS", { default: "2500" });
 // Comma-separated sign-in emails allowed to use the admin tools.
-const ADMIN_EMAILS = defineString("ADMIN_EMAILS", { default: "joe@vixxiv.com" });
+const ADMIN_EMAILS = defineString("ADMIN_EMAILS", { default: "joe@vixxiv.com,amvp123@gmail.com" });
 
 type Plan = "monthly" | "annual" | "lifetime";
 
@@ -1066,8 +1066,19 @@ export const adminApi = onCall(
     const data = request.data ?? {};
     try {
       switch (action) {
-        case "whoami":
-          return { admin: true, email: adminEmail };
+        case "whoami": {
+          // Admins always have Pro: one without a plan of their own is given
+          // complimentary lifetime access the first time they are recognised.
+          const uid = request.auth!.uid;
+          const ref = db.collection("users").doc(uid);
+          const prev = (await ref.get()).data() ?? {};
+          const hasPro = prev.tier === "pro-lifetime" || hasLiveRecurring(prev);
+          if (!hasPro) {
+            await ref.set(compFields(uid, adminEmail, "lifetime", null, "admin account"), { merge: true });
+            logger.info("Admin comp applied", { uid, email: adminEmail });
+          }
+          return { admin: true, email: adminEmail, comped: !hasPro };
+        }
         case "users":
           return await adminUsers();
         case "revenue":
