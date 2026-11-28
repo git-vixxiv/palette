@@ -26,7 +26,7 @@ export const Header: React.FC = () => {
             </span>
           </div>
           <p className="text-[10px] text-slate-400 font-sans hidden xl:block whitespace-nowrap mt-0.5">
-            Build, score and preview color palettes, with WCAG contrast checks
+            Build, preview and score beautiful color palettes (with the help of science.)
           </p>
         </div>
       </a>
