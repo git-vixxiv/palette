@@ -240,6 +240,9 @@ const Privacy: React.FC = () => (
         <strong>Amplitude</strong> for usage analytics and session replay, as described in section 1.
       </li>
       <li>
+        <strong>Brevo</strong> for email. It holds your email address, name and plan status so we can send account emails (welcome, receipt, cancellation, a failed payment) and, only if you opted in, occasional news. Every marketing email has an unsubscribe link.
+      </li>
+      <li>
         <strong>Square</strong> for payment processing. Square receives your card details and your email address, and handles them under its own privacy policy.
       </li>
     </UL>

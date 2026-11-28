@@ -220,8 +220,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const userRef = doc(db, "users", uid);
         const userDoc = await getDoc(userRef);
+        // The "email me news" box ticked on the sign-in form, if any.
+        let optIn = false;
+        try {
+          optIn = localStorage.getItem("palette_marketing_opt_in") === "1";
+          localStorage.removeItem("palette_marketing_opt_in");
+        } catch {
+          /* storage unavailable */
+        }
         if (userDoc.exists()) {
           const data = userDoc.data();
+          if (optIn && data.marketingOptIn !== true) {
+            setDoc(userRef, { marketingOptIn: true, updatedAt: serverTimestamp() }, { merge: true }).catch(() => undefined);
+          }
           setUserSubscription({
             tier: resolveEffectiveTier(data.tier, data.premiumExpires),
             subscriptionId: data.subscriptionId,
@@ -239,6 +250,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             userId: uid,
             email: auth.currentUser?.email || "",
             tier: "free",
+            marketingOptIn: optIn,
             updatedAt: serverTimestamp()
           });
           setUserSubscription(defaultSub);

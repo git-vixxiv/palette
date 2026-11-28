@@ -95,6 +95,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose, reason = "s
         {/* Google */}
         {mode !== "reset" && (
           <>
+            <label className="flex items-start gap-2 mb-3 text-xs text-slate-600 font-sans cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                onChange={(e) => {
+                  // Read after sign-in, when the profile is created or loaded.
+                  try {
+                    if (e.target.checked) localStorage.setItem("palette_marketing_opt_in", "1");
+                    else localStorage.removeItem("palette_marketing_opt_in");
+                  } catch {
+                    /* storage unavailable */
+                  }
+                }}
+              />
+              <span>Email me palette tips and news about other vixxiv apps. Optional; unsubscribe any time.</span>
+            </label>
             <button
               onClick={async () => {
                 setBusy(true);

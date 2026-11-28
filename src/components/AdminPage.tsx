@@ -214,6 +214,30 @@ const UsersTab: React.FC<{ data: any; reload: () => void }> = ({ data, reload })
           </div>
           <p className="text-xs text-slate-500 pb-2.5">{rows.length} of {data?.users?.length ?? 0} accounts</p>
         </div>
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setMsg(null);
+              try {
+                const res: any = await api("brevoSync");
+                const problems = Object.entries(res.setup || {}).filter(([, v]) => /failed|not activated/.test(String(v))).map(([k, v]) => `${k}: ${v}`);
+                setMsg({ kind: problems.length ? "error" : "ok", text: `${res.synced} accounts sent to Brevo.${problems.length ? ` Setup problems: ${problems.join("; ")}` : ""}` });
+              } catch (err) {
+                setMsg({ kind: "error", text: errText(err) });
+              } finally {
+                setBusy(false);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            }}
+            className="h-9 px-3 rounded-md border border-slate-300 bg-white text-xs font-bold uppercase tracking-wider text-slate-700 cursor-pointer hover:bg-slate-50 disabled:opacity-50"
+          >
+            Sync all to Brevo
+          </button>
+          <p className="text-xs text-slate-500">New and changed accounts sync by themselves. Use this once to send existing accounts, or to repair the lists.</p>
+        </div>
         <table className="w-full">
           <thead>
             <tr><th className={th}>Account</th><th className={th}>Plan</th><th className={th}>Renews / ends</th><th className={th}>Joined</th><th className={th}>Last seen</th><th className={th}></th></tr>

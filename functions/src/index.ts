@@ -19,6 +19,7 @@
  */
 
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { defineSecret, defineString } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { initializeApp } from "firebase-admin/app";
@@ -37,6 +38,7 @@ const db = getFirestore();
 // Secrets — set via `firebase functions:secrets:set <NAME>`
 const SQUARE_ACCESS_TOKEN = defineSecret("SQUARE_ACCESS_TOKEN");
 const SQUARE_WEBHOOK_SIGNATURE_KEY = defineSecret("SQUARE_WEBHOOK_SIGNATURE_KEY");
+const BREVO_API_KEY = defineSecret("BREVO_API_KEY");
 
 // Non-secret params — set in functions/.env (see .env.example)
 const SQUARE_ENVIRONMENT = defineString("SQUARE_ENVIRONMENT", { default: "sandbox" });
@@ -193,7 +195,7 @@ const CHECKOUT_LOCK_MS = 90_000;
 export const createSubscription = onCall(
   {
     region: "us-central1",
-    secrets: [SQUARE_ACCESS_TOKEN],
+    secrets: [SQUARE_ACCESS_TOKEN, BREVO_API_KEY],
     cors: true,
   },
   async (request) => {
@@ -390,6 +392,12 @@ export const createSubscription = onCall(
         ]).catch((e) => logger.error("Could not record promo redemption", { uid, code: promo.code, message: e?.message }));
       }
 
+      // Subscription payments are reported to Brevo by the webhook, per paid
+      // invoice. A lifetime purchase has no invoice, so report it here.
+      if (plan === "lifetime") {
+        await brevoOrder(`palette-${subscriptionId}`, email, "lifetime", promo ? promo.priceCents : listPriceCents("lifetime"), false);
+      }
+
       logger.info("Subscription granted", { uid, plan, subscriptionId, promo: promo?.code });
       return { success: true, tier: TIER_FOR_PLAN[plan], pricingPlan: PLAN_LABEL[plan] };
     } catch (err: any) {
@@ -527,7 +535,7 @@ async function findUserBySubscription(subscriptionId?: string) {
 }
 
 export const squareWebhook = onRequest(
-  { region: "us-central1", secrets: [SQUARE_WEBHOOK_SIGNATURE_KEY, SQUARE_ACCESS_TOKEN] },
+  { region: "us-central1", secrets: [SQUARE_WEBHOOK_SIGNATURE_KEY, SQUARE_ACCESS_TOKEN, BREVO_API_KEY] },
   async (req, res) => {
     // 1. Verify the event really came from Square.
     const signature = req.header("x-square-hmacsha256-signature") ?? "";
@@ -647,6 +655,13 @@ export const squareWebhook = onRequest(
           }
           const plan: Plan = doc.get("tier") === "pro-annual" ? "annual" : "monthly";
 
+          if (invoice.id) {
+            const paid = Number(invoice.payment_requests?.[0]?.total_completed_amount_money?.amount ?? invoice.payment_requests?.[0]?.computed_amount_money?.amount ?? NaN);
+            const firstInvoice = !doc.get("lastInvoiceId");
+            await brevoOrder(`palette-${invoice.id}`, doc.get("email") ?? "", plan, Number.isFinite(paid) && paid > 0 ? paid : listPriceCents(plan), !firstInvoice);
+            await doc.ref.set({ lastInvoiceId: invoice.id }, { merge: true });
+          }
+
           // First-payment-only promo: the discounted invoice is now paid, so
           // set the subscription back to the normal price for every renewal.
           if (doc.get("promoRevertPending") === true) {
@@ -709,6 +724,334 @@ export const squareWebhook = onRequest(
   }
 );
 
+
+/* ----------------------------------------------------------------------- *
+ * Brevo: CRM contact sync, transactional email, events and orders.
+ *
+ * Everything here is best-effort. A Brevo outage or a rejected request is
+ * logged and swallowed; it must never fail a checkout, a webhook or a
+ * profile write.
+ * ----------------------------------------------------------------------- */
+
+const BREVO_SENDER_EMAIL = defineString("BREVO_SENDER_EMAIL", { default: "palette@vixxiv.com" });
+const BREVO_SENDER_NAME = defineString("BREVO_SENDER_NAME", { default: "palette by vixxiv" });
+const BREVO_REPLY_TO = defineString("BREVO_REPLY_TO", { default: "contact@vixxiv.com" });
+const BREVO_LIST_SUBSCRIBERS = defineString("BREVO_LIST_SUBSCRIBERS", { default: "8" });
+const BREVO_LIST_NON_SUBSCRIBERS = defineString("BREVO_LIST_NON_SUBSCRIBERS", { default: "9" });
+const BREVO_LIST_FORMER = defineString("BREVO_LIST_FORMER", { default: "10" });
+
+const SITE_URL = "https://palette.vixxiv.com";
+
+async function brevo(path: string, method: string, body?: unknown): Promise<{ ok: boolean; status: number; data: any }> {
+  const r = await fetch(`https://api.brevo.com/v3${path}`, {
+    method,
+    headers: { "api-key": BREVO_API_KEY.value(), "content-type": "application/json", accept: "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data: any = null;
+  try {
+    data = await r.json();
+  } catch {
+    /* empty body (201/204) */
+  }
+  return { ok: r.ok, status: r.status, data };
+}
+
+// Contact attributes palette keeps up to date in Brevo.
+const BREVO_ATTRIBUTES: Record<string, "text" | "date" | "boolean" | "float"> = {
+  PALETTE_PLAN: "text", // free | monthly | annual | lifetime
+  PALETTE_STATUS: "text", // free | active | canceling | past_due | former
+  PALETTE_COMP: "boolean",
+  PALETTE_RENEWS_OR_ENDS: "date",
+  PALETTE_SIGNED_UP: "date",
+  PALETTE_OPT_IN: "boolean",
+};
+
+let brevoReady = false;
+/** One-time account preparation: create our attributes and switch on eCommerce. */
+async function ensureBrevoSetup(force = false): Promise<Record<string, string>> {
+  const report: Record<string, string> = {};
+  if (brevoReady && !force) return report;
+  const flag = db.collection("config").doc("brevo");
+  if (!force && (await flag.get()).get("ready") === true) {
+    brevoReady = true;
+    return report;
+  }
+  for (const [name, type] of Object.entries(BREVO_ATTRIBUTES)) {
+    const res = await brevo(`/contacts/attributes/normal/${name}`, "POST", { type });
+    report[name] = res.ok ? "created" : res.data?.code === "invalid_parameter" || /exist/i.test(res.data?.message ?? "") ? "already there" : `failed (${res.status}: ${res.data?.message ?? ""})`;
+  }
+  const eco = await brevo("/ecommerce/activate", "POST", { currency: "USD" });
+  report.ecommerce = eco.ok ? "activated" : /already/i.test(eco.data?.message ?? "") ? "already active" : `not activated (${eco.status}: ${eco.data?.message ?? ""})`;
+  const failed = Object.entries(report).filter(([k, v]) => k !== "ecommerce" && v.startsWith("failed"));
+  if (!failed.length) {
+    await flag.set({ ready: true, at: FieldValue.serverTimestamp() }, { merge: true });
+    brevoReady = true;
+  }
+  logger.info("Brevo setup", report);
+  return report;
+}
+
+interface CrmState {
+  plan: "free" | "monthly" | "annual" | "lifetime";
+  status: "free" | "active" | "canceling" | "past_due" | "former";
+  pro: boolean;
+  comp: boolean;
+  expires: string | null;
+}
+
+/** Reduce a profile document to what the CRM and the emails care about. */
+function crmState(d: FirebaseFirestore.DocumentData | undefined): CrmState {
+  const data = d ?? {};
+  const exp = data.premiumExpires ? Date.parse(data.premiumExpires) : NaN;
+  const live = data.tier === "pro-lifetime" || ((data.tier === "pro-monthly" || data.tier === "pro-annual") && Number.isFinite(exp) && exp + 3 * 86400000 > Date.now());
+  const plan = !live ? "free" : data.tier === "pro-lifetime" ? "lifetime" : data.tier === "pro-annual" ? "annual" : "monthly";
+  const everPaid = !!data.squareCustomerId || !!data.compAt || data.subscriptionStatus === "cancelled";
+  const status = live
+    ? data.subscriptionStatus === "canceling" && plan !== "lifetime"
+      ? "canceling"
+      : data.subscriptionStatus === "past_due"
+        ? "past_due"
+        : "active"
+    : everPaid
+      ? "former"
+      : "free";
+  return { plan, status, pro: live, comp: live && data.comp === true, expires: live && plan !== "lifetime" && Number.isFinite(exp) ? new Date(exp).toISOString().slice(0, 10) : null };
+}
+
+/** Create or update the Brevo contact and put it on the right list. */
+async function syncBrevoContact(uid: string, data: FirebaseFirestore.DocumentData | undefined): Promise<string> {
+  let email: string = data?.email ?? "";
+  let name = "";
+  let created: string | null = null;
+  try {
+    const u = await getAuth().getUser(uid);
+    email = u.email ?? email;
+    name = u.displayName ?? "";
+    created = u.metadata.creationTime ? new Date(u.metadata.creationTime).toISOString().slice(0, 10) : null;
+  } catch {
+    /* account deleted: fall back to the profile's email */
+  }
+  if (!email) return "";
+  await ensureBrevoSetup();
+  const st = crmState(data);
+  const lists = { sub: Number(BREVO_LIST_SUBSCRIBERS.value()), non: Number(BREVO_LIST_NON_SUBSCRIBERS.value()), former: Number(BREVO_LIST_FORMER.value()) };
+  const target = st.pro ? lists.sub : st.status === "former" ? lists.former : lists.non;
+  const [first, ...rest] = name.trim().split(/\s+/);
+  const res = await brevo("/contacts", "POST", {
+    email,
+    updateEnabled: true,
+    ext_id: uid,
+    attributes: {
+      ...(first ? { FIRSTNAME: first, LASTNAME: rest.join(" ") } : {}),
+      PALETTE_PLAN: st.plan,
+      PALETTE_STATUS: st.status,
+      PALETTE_COMP: st.comp,
+      ...(st.expires ? { PALETTE_RENEWS_OR_ENDS: st.expires } : {}),
+      ...(created ? { PALETTE_SIGNED_UP: created } : {}),
+      PALETTE_OPT_IN: data?.marketingOptIn === true,
+    },
+    listIds: [target],
+    unlinkListIds: [lists.sub, lists.non, lists.former].filter((id) => id !== target),
+  });
+  if (!res.ok) logger.error("Brevo contact sync failed", { uid, status: res.status, message: res.data?.message });
+  return email;
+}
+
+async function brevoEvent(email: string, name: string, props: Record<string, unknown> = {}) {
+  const res = await brevo("/events", "POST", { event_name: name, identifiers: { email_id: email }, event_properties: props });
+  if (!res.ok) logger.warn("Brevo event failed", { name, status: res.status, message: res.data?.message });
+}
+
+/** Report a payment to Brevo eCommerce. `id` makes repeats harmless. */
+async function brevoOrder(id: string, email: string, plan: Plan, cents: number, renewal: boolean) {
+  if (!email || !id) return;
+  try {
+    await ensureBrevoSetup();
+    const now = new Date().toISOString();
+    const res = await brevo("/orders", "POST", {
+      id,
+      createdAt: now,
+      updatedAt: now,
+      status: "completed",
+      amount: cents / 100,
+      email,
+      products: [{ productId: `palette-pro-${plan}`, quantity: 1, price: cents / 100 }],
+    });
+    if (!res.ok) logger.warn("Brevo order failed", { id, status: res.status, message: res.data?.message });
+    await brevoEvent(email, renewal ? "palette_renewed" : "palette_purchased", { plan, amount: cents / 100 });
+  } catch (e: any) {
+    logger.warn("Brevo order error", { id, message: e?.message });
+  }
+}
+
+/* ------------------------------ emails ------------------------------ */
+
+const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+const longDate = (iso: string | null) => (iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }) : "");
+
+function emailHtml(heading: string, paragraphs: string[], button?: { label: string; url: string }): string {
+  const body = paragraphs.map((t) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#334155">${t}</p>`).join("");
+  const cta = button
+    ? `<p style="margin:22px 0 6px"><a href="${button.url}" style="display:inline-block;background:#2589BD;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 22px;border-radius:8px">${esc(button.label)}</a></p>`
+    : "";
+  return `<!doctype html><html><body style="margin:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:28px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px">
+<tr><td style="padding:26px 30px 6px"><span style="font-size:20px;font-weight:800;color:#1a1a1a">palette</span> <span style="font-size:12px;font-weight:700;color:#2589BD">by vixxiv</span></td></tr>
+<tr><td style="padding:10px 30px 26px"><h1 style="margin:8px 0 16px;font-size:22px;line-height:1.3;color:#1a1a1a">${esc(heading)}</h1>${body}${cta}</td></tr>
+<tr><td style="padding:16px 30px 24px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#64748b">
+palette is a vixxiv product, operated by DOru LLC, Austin, Texas.<br>
+Questions? Reply to this email or write to <a href="mailto:${BREVO_REPLY_TO.value()}" style="color:#2589BD">${BREVO_REPLY_TO.value()}</a>.<br>
+<a href="${SITE_URL}/terms" style="color:#64748b">Terms</a> · <a href="${SITE_URL}/privacy" style="color:#64748b">Privacy</a> · <a href="${SITE_URL}/refunds" style="color:#64748b">Refunds &amp; cancellation</a>
+</td></tr></table></td></tr></table></body></html>`;
+}
+
+async function sendBrevoEmail(to: string, name: string, subject: string, html: string, tag: string) {
+  const res = await brevo("/smtp/email", "POST", {
+    sender: { email: BREVO_SENDER_EMAIL.value(), name: BREVO_SENDER_NAME.value() },
+    replyTo: { email: BREVO_REPLY_TO.value() },
+    to: [{ email: to, ...(name ? { name } : {}) }],
+    subject,
+    htmlContent: html,
+    tags: ["palette", tag],
+  });
+  if (!res.ok) logger.error("Brevo email failed", { tag, status: res.status, message: res.data?.message });
+  else logger.info("Email sent", { tag });
+}
+
+const PLAN_WORDS: Record<string, string> = { monthly: "monthly", annual: "annual", lifetime: "lifetime" };
+
+/**
+ * Keeps Brevo in step with every account and sends the account emails.
+ * It runs on each profile write and works out what changed, so every path
+ * that changes a plan (checkout, webhook, cancel, comp, admin) is covered
+ * without each of them knowing about email.
+ */
+export const onProfileWrite = onDocumentWritten(
+  { document: "users/{uid}", region: "us-central1", secrets: [BREVO_API_KEY], retry: false },
+  async (event) => {
+    const uid = event.params.uid;
+    const before = event.data?.before.exists ? event.data.before.data() : undefined;
+    const after = event.data?.after.exists ? event.data.after.data() : undefined;
+    if (!after) return;
+    const was = crmState(before);
+    const now = crmState(after);
+    const isNew = !before;
+    const changed =
+      isNew || was.plan !== now.plan || was.status !== now.status || was.comp !== now.comp || was.expires !== now.expires || (before?.marketingOptIn === true) !== (after.marketingOptIn === true);
+    if (!changed) return; // e.g. the checkout lock being taken and released
+
+    try {
+      const email = await syncBrevoContact(uid, after);
+      if (!email) return;
+      let name = "";
+      try {
+        name = (await getAuth().getUser(uid)).displayName ?? "";
+      } catch {
+        /* no display name */
+      }
+      const hi = name ? `Hi ${esc(name.split(/\s+/)[0])},` : "Hi,";
+      const planWord = PLAN_WORDS[now.plan] ?? "";
+      const price = String(after.pricingPlan ?? "");
+
+      if (isNew) {
+        await brevoEvent(email, "palette_signed_up");
+        await sendBrevoEmail(
+          email,
+          name,
+          "Welcome to palette",
+          emailHtml("Welcome to palette", [
+            hi,
+            "Your account is ready. palette builds color palettes that work as a set: each color gets a job, text stays readable, and you can see the result on real layouts before you commit.",
+            "The free plan covers the generator, the scorecard, the contrast checker and the Website preview. Pro adds every harmony rule, up to 10 swatches, all preview layouts, every export format and a library to save your palettes.",
+          ], { label: "Open palette", url: SITE_URL }),
+          "welcome"
+        );
+        return;
+      }
+
+      // Complimentary access granted
+      if (now.comp && !was.comp) {
+        await brevoEvent(email, "palette_comp_granted", { plan: now.plan });
+        await sendBrevoEmail(
+          email,
+          name,
+          "You've been given palette Pro",
+          emailHtml("palette Pro, on us", [
+            hi,
+            now.plan === "lifetime"
+              ? "Your account now has complimentary lifetime access to palette Pro. There is nothing to pay and nothing to renew."
+              : `Your account now has complimentary access to palette Pro until ${longDate(now.expires)}. There is nothing to pay, and it won't turn into a paid plan by itself.`,
+            "Pro gives you every harmony rule, up to 10 swatches, all preview layouts, every export format and your palette library.",
+          ], { label: "Open palette", url: SITE_URL }),
+          "comp"
+        );
+        return;
+      }
+
+      // Paid plan started (or changed)
+      if (now.pro && !now.comp && (!was.pro || was.plan !== now.plan || was.comp)) {
+        await sendBrevoEmail(
+          email,
+          name,
+          "Your palette Pro purchase",
+          emailHtml("You're on palette Pro", [
+            hi,
+            `Thank you. Your ${planWord} plan is active${price ? ` (${esc(price)})` : ""}.`,
+            now.plan === "lifetime"
+              ? "Lifetime is a one-time payment: nothing renews and you won't be charged again."
+              : `It renews automatically on ${longDate(now.expires)}. You can cancel at any time from your account menu; you keep Pro until the end of the period you've paid for.`,
+            "Payments are non-refundable. The full policy is on the Refunds & cancellation page linked below.",
+          ], { label: "Open palette", url: SITE_URL }),
+          "purchase"
+        );
+        return;
+      }
+
+      // Renewal cancelled (customer or admin)
+      if (now.status === "canceling" && was.status !== "canceling" && !now.comp) {
+        await brevoEvent(email, "palette_cancelled", { plan: now.plan, ends: now.expires });
+        await sendBrevoEmail(
+          email,
+          name,
+          "Your palette Pro subscription is cancelled",
+          emailHtml("Your subscription is cancelled", [
+            hi,
+            `Your ${planWord} plan will not renew and you won't be charged again. You keep every Pro feature until ${longDate(now.expires)}.`,
+            "After that your account moves to the free plan. Your saved palettes stay in your library; you can open and delete them, and saving new ones is a Pro feature.",
+            "Changed your mind? You can subscribe again at any time.",
+          ], { label: "Open palette", url: SITE_URL }),
+          "cancelled"
+        );
+        return;
+      }
+
+      // Renewal payment failed
+      if (now.status === "past_due" && was.status !== "past_due") {
+        await brevoEvent(email, "palette_payment_failed", { plan: now.plan });
+        await sendBrevoEmail(
+          email,
+          name,
+          "We couldn't renew your palette Pro plan",
+          emailHtml("Your renewal payment didn't go through", [
+            hi,
+            `We tried to renew your ${planWord} plan and the card on file was declined. Nothing else has been charged.`,
+            "Your Pro access stays on for a few days while the payment is retried. If it still can't be collected, the account moves to the free plan and your saved palettes are kept.",
+            "To fix it, check with your card issuer. If the card has changed, let the plan lapse and subscribe again with the new card.",
+          ], { label: "Open palette", url: SITE_URL }),
+          "payment-failed"
+        );
+        return;
+      }
+
+      // Pro ended
+      if (was.pro && !now.pro) await brevoEvent(email, "palette_pro_ended", { plan: was.plan });
+    } catch (e: any) {
+      logger.error("onProfileWrite failed", { uid, message: e?.message });
+    }
+  }
+);
 
 /* ----------------------------------------------------------------------- *
  * adminApi (callable) - owner tools: users, comps, promo codes, revenue.
@@ -1144,7 +1487,7 @@ async function adminUserAction(data: any, adminEmail: string, adminUid: string) 
 }
 
 export const adminApi = onCall(
-  { region: "us-central1", secrets: [SQUARE_ACCESS_TOKEN], cors: true, timeoutSeconds: 120 },
+  { region: "us-central1", secrets: [SQUARE_ACCESS_TOKEN, BREVO_API_KEY], cors: true, timeoutSeconds: 120 },
   async (request) => {
     const adminEmail = requireAdmin(request as any);
     const action = String(request.data?.action ?? "");
@@ -1183,6 +1526,15 @@ export const adminApi = onCall(
           return await adminGrantComp(data, adminEmail);
         case "revokeComp":
           return await adminRevokeComp(data, adminEmail);
+        case "brevoSync": {
+          const setup = await ensureBrevoSetup(true);
+          const snap = await db.collection("users").get();
+          let synced = 0;
+          for (const d of snap.docs) {
+            if (await syncBrevoContact(d.id, d.data())) synced++;
+          }
+          return { ok: true, synced, setup };
+        }
         case "userAction":
           return await adminUserAction(data, adminEmail, request.auth!.uid);
         default:
