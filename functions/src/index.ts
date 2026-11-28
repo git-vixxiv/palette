@@ -146,6 +146,23 @@ const TIER_FOR_PLAN: Record<Plan, string> = {
   lifetime: "pro-lifetime",
 };
 
+const squareEnv = () => (SQUARE_ENVIRONMENT.value() === "production" ? "production" : "sandbox");
+
+/**
+ * The Square plan variation to subscribe a customer to. Sandbox ids come from
+ * functions/.env. Production ids are created by the admin "Prepare production"
+ * action and kept in Firestore (config/squareProduction), so going live needs
+ * no copying of ids between systems.
+ */
+let productionPlans: { monthly?: string; annual?: string } | null = null;
+async function planVariationFor(plan: "monthly" | "annual"): Promise<string> {
+  if (squareEnv() !== "production") return plan === "monthly" ? SQUARE_PLAN_MONTHLY.value() : SQUARE_PLAN_ANNUAL.value();
+  if (!productionPlans?.[plan]) {
+    productionPlans = ((await db.collection("config").doc("squareProduction").get()).get("plans") as any) ?? null;
+  }
+  return productionPlans?.[plan] ?? "";
+}
+
 function squareClient(): Client {
   return new Client({
     accessToken: SQUARE_ACCESS_TOKEN.value(),
@@ -253,7 +270,8 @@ export const createSubscription = onCall(
 
     try {
       // 3. Find or create a Square customer for this user.
-      let squareCustomerId: string | undefined = previous.squareCustomerId;
+      let squareCustomerId: string | undefined =
+        (previous.squareEnv ?? "sandbox") === squareEnv() ? previous.squareCustomerId : undefined;
 
       if (!squareCustomerId) {
         const customerRes = await client.customersApi.createCustomer({
@@ -322,8 +340,7 @@ export const createSubscription = onCall(
         }
       } else {
         // 5b. Recurring subscription (monthly / annual).
-        const planVariationId =
-          plan === "monthly" ? SQUARE_PLAN_MONTHLY.value() : SQUARE_PLAN_ANNUAL.value();
+        const planVariationId = await planVariationFor(plan);
         if (!planVariationId) {
           throw new HttpsError(
             "failed-precondition",
@@ -369,6 +386,8 @@ export const createSubscription = onCall(
           promoRevertPending: promo && promo.duration === "first" && plan !== "lifetime" ? true : FieldValue.delete(),
           squareCustomerId,
           squareCardId: cardId,
+          squareEnv: squareEnv(),
+          lastInvoiceId: FieldValue.delete(),
           checkoutLockAt: FieldValue.delete(),
           updatedAt: FieldValue.serverTimestamp(),
         },
@@ -1486,6 +1505,105 @@ async function adminUserAction(data: any, adminEmail: string, adminUid: string) 
   return { ok: true };
 }
 
+/**
+ * Run once, right after the switch to Square production:
+ *  1. confirm the configured location belongs to the live Square account,
+ *  2. create the monthly and annual plans in the live catalog (if not done),
+ *  3. clear sandbox billing records from existing accounts, which mean
+ *     nothing to live Square and would make their next checkout fail.
+ * Safe to run again: finished steps are skipped.
+ */
+async function adminPrepareProduction(adminEmail: string) {
+  if (squareEnv() !== "production") throw new HttpsError("failed-precondition", "Square is still in sandbox mode. Switch to production first.");
+  const client = squareClient();
+  const report: Record<string, string> = {};
+
+  const locs = (await client.locationsApi.listLocations()).result.locations ?? [];
+  const loc = locs.find((l) => l.id === SQUARE_LOCATION_ID.value());
+  if (!loc) {
+    throw new HttpsError("failed-precondition", `The configured location is not in this Square account. Its locations are: ${locs.map((l) => `${l.name} (${l.id})`).join(", ") || "none"}.`);
+  }
+  report.location = `${loc.name} (${loc.id}), ${loc.status ?? "status unknown"}`;
+  const caps = loc.capabilities ?? [];
+  report.cardPayments = caps.includes("CREDIT_CARD_PROCESSING") ? "enabled" : "NOT enabled on this location: finish Square account activation before taking payments";
+
+  const cfgRef = db.collection("config").doc("squareProduction");
+  const existing = (await cfgRef.get()).get("plans") as { monthly?: string; annual?: string } | undefined;
+  if (existing?.monthly && existing?.annual) {
+    report.plans = "already created";
+  } else {
+    const res = await client.catalogApi.batchUpsertCatalogObjects({
+      idempotencyKey: randomUUID(),
+      batches: [
+        {
+          objects: [
+            {
+              type: "SUBSCRIPTION_PLAN",
+              id: "#palette-pro-plan",
+              subscriptionPlanData: {
+                name: "palette Pro",
+                subscriptionPlanVariations: [
+                  {
+                    type: "SUBSCRIPTION_PLAN_VARIATION",
+                    id: "#monthly",
+                    subscriptionPlanVariationData: {
+                      name: "Monthly",
+                      phases: [{ cadence: "MONTHLY", pricing: { type: "STATIC", priceMoney: { amount: BigInt(listPriceCents("monthly")), currency: "USD" } } }],
+                    },
+                  },
+                  {
+                    type: "SUBSCRIPTION_PLAN_VARIATION",
+                    id: "#annual",
+                    subscriptionPlanVariationData: {
+                      name: "Annual",
+                      phases: [{ cadence: "ANNUAL", pricing: { type: "STATIC", priceMoney: { amount: BigInt(listPriceCents("annual")), currency: "USD" } } }],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const map = res.result.idMappings ?? [];
+    const idFor = (c: string) => map.find((m) => m.clientObjectId === c)?.objectId ?? "";
+    const plans = { monthly: idFor("#monthly"), annual: idFor("#annual") };
+    if (!plans.monthly || !plans.annual) throw new HttpsError("internal", "Square did not return the new plan ids.");
+    await cfgRef.set({ plans, createdBy: adminEmail, createdAt: FieldValue.serverTimestamp() }, { merge: true });
+    productionPlans = plans;
+    report.plans = `created: monthly ${dollars(listPriceCents("monthly"))}, annual ${dollars(listPriceCents("annual"))}`;
+  }
+
+  // Sandbox billing records: free the account so it can buy for real.
+  const snap = await db.collection("users").get();
+  let reset = 0;
+  for (const d of snap.docs) {
+    const u = d.data();
+    if ((u.squareEnv ?? "sandbox") === "production") continue;
+    if (!u.squareCustomerId && !u.subscriptionId && !u.squareCardId) continue;
+    const keepComp = u.comp === true;
+    await d.ref.set(
+      {
+        squareCustomerId: FieldValue.delete(),
+        squareCardId: FieldValue.delete(),
+        squareEnv: FieldValue.delete(),
+        lastInvoiceId: FieldValue.delete(),
+        promoRevertPending: FieldValue.delete(),
+        promoRevertFailed: FieldValue.delete(),
+        subscriptionId: "",
+        ...(keepComp ? {} : { tier: "free", subscriptionStatus: "", pricingPlan: "", promoCode: FieldValue.delete(), ...expiryFields(new Date()) }),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    reset++;
+  }
+  report.testAccounts = `${reset} sandbox billing record${reset === 1 ? "" : "s"} cleared`;
+  logger.info("Production prepared", { by: adminEmail, ...report });
+  return { ok: true, report };
+}
+
 export const adminApi = onCall(
   { region: "us-central1", secrets: [SQUARE_ACCESS_TOKEN, BREVO_API_KEY], cors: true, timeoutSeconds: 120 },
   async (request) => {
@@ -1526,6 +1644,8 @@ export const adminApi = onCall(
           return await adminGrantComp(data, adminEmail);
         case "revokeComp":
           return await adminRevokeComp(data, adminEmail);
+        case "prepareProduction":
+          return await adminPrepareProduction(adminEmail);
         case "brevoSync": {
           const setup = await ensureBrevoSetup(true);
           const snap = await db.collection("users").get();

@@ -44,7 +44,44 @@ const tierName = (u: any) =>
   u.tier === "free" ? "Free" : `${u.tier === "pro-lifetime" ? "Lifetime" : u.tier === "pro-annual" ? "Annual" : "Monthly"}${u.comp ? " (comp)" : ""}`;
 
 /* ------------------------------ Overview ------------------------------ */
-const Overview: React.FC<{ users: any; revenue: any }> = ({ users, revenue }) => {
+/** Shown once Square is in production: the one-click preparation step. */
+const GoLive: React.FC<{ reload: () => void }> = ({ reload }) => {
+  const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<Record<string, string> | null>(null);
+  const [error, setError] = useState("");
+  const run = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res: any = await api("prepareProduction");
+      setReport(res.report);
+      reload();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className={`${card} space-y-3`}>
+      <p className="text-sm font-bold text-slate-900">Live payments setup</p>
+      <p className="text-sm text-slate-600">
+        Square is in production. Run this once after switching: it checks the live location, creates the monthly and annual plans in your live Square catalog, and clears sandbox billing records from test accounts. Running it again is harmless.
+      </p>
+      <button onClick={run} disabled={busy} className={btn}>{busy ? "Working…" : "Prepare production"}</button>
+      {error && <Notice kind="error">{error}</Notice>}
+      {report && (
+        <ul className="text-sm text-slate-700 space-y-1">
+          {Object.entries(report).map(([k, v]) => (
+            <li key={k}><span className="font-semibold">{k}:</span> {v}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+const Overview: React.FC<{ users: any; revenue: any; reload: () => void }> = ({ users, revenue, reload }) => {
   const s = users?.summary;
   const max = Math.max(1, ...(revenue?.daily ?? []).map((d: any) => d.cents));
   return (
@@ -52,6 +89,7 @@ const Overview: React.FC<{ users: any; revenue: any }> = ({ users, revenue }) =>
       {revenue?.environment !== "production" && revenue && (
         <Notice kind="error">Square is in sandbox mode. The money figures below are test payments, not real revenue.</Notice>
       )}
+      {revenue?.environment === "production" && <GoLive reload={reload} />}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat title="Today" value={revenue ? money(revenue.today.grossCents - revenue.today.refundedCents) : "…"} note={revenue ? `${revenue.today.sales} payments` : undefined} />
         <Stat title="Last 7 days" value={revenue ? money(revenue.last7.grossCents - revenue.last7.refundedCents) : "…"} note={revenue ? `${revenue.last7.sales} payments` : undefined} />
@@ -604,7 +642,7 @@ export const AdminPage: React.FC = () => {
         ))}
       </div>
       {error && <div className="mb-4"><Notice kind="error">Some data could not be loaded: {error}</Notice></div>}
-      {tab === "overview" && <Overview users={users} revenue={revenue} />}
+      {tab === "overview" && <Overview users={users} revenue={revenue} reload={load} />}
       {tab === "users" && <UsersTab data={users} reload={load} />}
       {tab === "promos" && <PromosTab data={promos} reload={load} />}
     </div>
