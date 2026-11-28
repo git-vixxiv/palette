@@ -24,7 +24,7 @@ import {
   setDoc
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { track } from "@amplitude/unified";
+import { track } from "../analytics";
 import { isAdminEmail } from "../legal";
 
 // Free accounts can build palettes of up to this many swatches; 5 to 10 need Pro.
@@ -55,6 +55,8 @@ interface AppContextType {
   // Subscription / Monetization State
   userSubscription: UserSubscription;
   loadingSub: boolean;
+  /** True once the signed-in account's real plan has been read (always true when signed out). */
+  subReady: boolean;
   showUpgradeModal: boolean;
   /** Opening it while signed out asks the visitor to sign in first, then continues. */
   setShowUpgradeModal: (show: boolean) => void;
@@ -851,6 +853,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notification,
         userSubscription,
         loadingSub,
+        subReady: !user || subLoadedFor === user.uid,
         showUpgradeModal,
         setShowUpgradeModal,
         authPrompt,

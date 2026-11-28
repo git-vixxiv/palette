@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { LogOut, ChevronDown, CheckCircle, Sparkles, Crown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -7,9 +7,33 @@ import { isAdminEmail } from "../legal";
 import logoUrl from "../assets/logo.webp";
 
 export const Header: React.FC = () => {
-  const { user, logout, userSubscription, setShowUpgradeModal, cancelSubscription, authPrompt, openAuth, closeAuth } = useApp();
+  const { user, logout, loadingAuth, subReady, userSubscription, setShowUpgradeModal, cancelSubscription, authPrompt, openAuth, closeAuth } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
-  const isPro = userSubscription.tier !== "free";
+
+  // Restoring a sign-in takes a network round trip on every page load. Until
+  // it finishes the app does not know who is here, and used to show "Sign In"
+  // and "Go Pro" to signed-in members for a moment. The header now remembers
+  // what it showed last time and shows that while the session is confirmed.
+  const HINT_KEY = "palette_session_hint";
+  const [hint] = useState<null | { name: string; photo: string; pro: boolean }>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(HINT_KEY) || "null");
+    } catch {
+      return null;
+    }
+  });
+  const settling = loadingAuth || !subReady;
+  useEffect(() => {
+    if (settling) return;
+    try {
+      if (user) localStorage.setItem(HINT_KEY, JSON.stringify({ name: user.displayName || "", photo: user.photoURL || "", pro: userSubscription.tier !== "free" }));
+      else localStorage.removeItem(HINT_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [settling, user, userSubscription.tier]);
+  const restoring = loadingAuth && !!hint; // a member's session is still being confirmed
+  const isPro = settling && hint ? hint.pro : userSubscription.tier !== "free";
   const goldBadge = { background: "linear-gradient(135deg, #F7DC8A 0%, #D9A62E 55%, #B8860B 100%)" };
 
   return (
@@ -57,7 +81,27 @@ export const Header: React.FC = () => {
           )}
 
           <AnimatePresence mode="wait">
-            {!user ? (
+            {restoring ? (
+              <div
+                key="restoring"
+                aria-busy="true"
+                className={`h-9 flex items-center gap-1.5 sm:gap-2 pl-1 pr-1.5 border rounded-md ${hint!.pro ? "bg-amber-50/70 border-amber-300" : "bg-slate-50 border-slate-200"}`}
+              >
+                <img
+                  src={hint!.photo || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50"}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="w-7 h-7 rounded object-cover shadow-3xs border border-white"
+                />
+                {hint!.pro && (
+                  <span className="w-5 h-5 rounded-full grid place-items-center shrink-0 shadow-sm ring-1 ring-amber-600/20" style={goldBadge}>
+                    <Crown className="w-3 h-3 text-white" strokeWidth={2.5} />
+                  </span>
+                )}
+                <span className="text-xs font-sans font-bold text-slate-700 max-w-[120px] truncate hidden sm:inline">{hint!.name || "Explorer"}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-300" />
+              </div>
+            ) : !user ? (
               <motion.button
                 key="signin"
                 initial={{ opacity: 0, y: -5 }}
